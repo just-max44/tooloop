@@ -1,50 +1,91 @@
-# Welcome to your Expo app 👋
+# Tooloop
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Application mobile cross-platform (Expo + React Native) destinée à la mise en relation locale pour le prêt d'objets entre voisins.
 
-## Get started
+## Objectif
 
-1. Install dependencies
+- UX simple, rassurante et rapide
+- Déploiement cible: Android (Play Store) et iOS (App Store)
+- Base technique propre, testable et revendable
+- Zéro dépendance à une API payante pour le MVP front
 
-   ```bash
-   npm install
-   ```
+## Différenciation produit (front)
 
-2. Start the app
+- Pulse quartier (activité locale + dynamique d’entraide)
+- Parcours Confiance locale (score, preuves, signaux communautaires)
+- Pass d’échange offline (QR/code local, validation remise/retour en 2 étapes)
+- Feedback post-prêt avec projection d’impact confiance
+- Formulaire de publication adaptatif (`Prêt` / `Recherche`)
 
-   ```bash
-   npx expo start
-   ```
+## Stack
 
-In the output, you'll find options to open the app in a
+- Expo Router
+- React Native + TypeScript strict
+- ESLint (config Expo)
+- Design system interne (tokens + composants UI)
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Démarrage local
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+1. Installer les dépendances
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+2. Lancer le projet
 
-## Learn more
+```bash
+npm run start
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+3. Vérifier la qualité
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm run lint
+npx tsc --noEmit
+```
 
-## Join the community
+## Structure utile
 
-Join our community of developers creating universal apps.
+- `app/` : routes et écrans Expo Router
+- `components/ui/` : composants réutilisables (Button, Card, Badge, etc.)
+- `constants/theme.ts` : tokens design (couleurs, radius, spacing)
+- `app/proof/` : logique pass d’échange (remise, retour, récapitulatifs)
+- `app/feedback/` : évaluation post-échange
+- `architecture.md` : cadrage fonctionnel MVP
+- `styles.md` : direction artistique
+- `TODO.md` : suivi d'implémentation
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Fonctionnalités MVP actuellement implémentées
+
+- Onglets `Empruntés`, `Prêtés`, `Terminés` avec états locaux (`pending`, `accepted`, `completed`, `refused`)
+- Acceptation / refus côté prêteur
+- Chat autorisé uniquement après acceptation
+- Pass d’échange en deux phases :
+	- `Remise` : date de retour définie par le prêteur, validation emprunteur via QR/code + récapitulatif
+	- `Retour` : état de l’objet défini par le prêteur (`Conforme`, `Partiel`, `Abîmé`), validation emprunteur via QR/code + récapitulatif
+- Verrouillage des étapes déjà validées + redirection vers évaluation en fin de retour
+- Recherche fonctionnelle dans `Découvrir` (titre, description, propriétaire)
+
+## Notes techniques MVP
+
+- La logique d’état est locale (stores en mémoire) pour le front MVP.
+- Les données proviennent de `data/mock.ts`.
+- Aucun backend persistant n’est branché à ce stade.
+
+## Publication stores
+
+Le guide de pré-publication est disponible dans `docs/RELEASE_CHECKLIST.md`.
+
+Documents légaux MVP disponibles :
+
+- `docs/PRIVACY_POLICY.md`
+- `docs/TERMS_AND_CONDITIONS.md`
+- `docs/STORE_METADATA.md`
+
+Avant soumission, vérifier au minimum:
+
+- identifiants bundle/package définitifs
+- versioning iOS/Android
+- assets stores (icône, screenshots, privacy policy)
+- conformité légale (CGU / politique de confidentialité)

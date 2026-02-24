@@ -1,112 +1,192 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { Card } from '@/components/ui/card';
+import { ObjectCard } from '@/components/ui/object-card';
+import { SearchBar } from '@/components/ui/search-bar';
+import { Colors, Radius } from '@/constants/theme';
+import { DISCOVER_FILTERS, DISCOVER_OBJECTS, NEIGHBORHOOD_PULSE } from '@/data/mock';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function TabTwoScreen() {
+  const router = useRouter();
+  const colorScheme = useColorScheme();
+  const resolvedTheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const colors = Colors[resolvedTheme];
+  const mutedText = useThemeColor({}, 'mutedText');
+
+  const [activeCategory, setActiveCategory] = useState<(typeof DISCOVER_FILTERS)[number]>('Tout');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredByCategory =
+    activeCategory === 'Tout'
+      ? DISCOVER_OBJECTS
+      : DISCOVER_OBJECTS.filter((objectItem) => objectItem.category === activeCategory);
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filtered = filteredByCategory.filter((objectItem) => {
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    return (
+      objectItem.title.toLowerCase().includes(normalizedSearch) ||
+      objectItem.description.toLowerCase().includes(normalizedSearch) ||
+      objectItem.ownerName.toLowerCase().includes(normalizedSearch)
+    );
+  });
+  const nearbyCount = filtered.filter((item) => item.distanceKm <= 1).length;
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
+      <ThemedView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.screenWrap}>
+        <View style={styles.headerBlock}>
+          <ThemedText type="title">Découvrir</ThemedText>
+          <ThemedText style={{ color: mutedText }}>Trouve des objets disponibles autour de toi.</ThemedText>
+        </View>
+
+        <SearchBar
+          placeholder="Rechercher un objet"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          accessibilityLabel="Rechercher un objet"
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
+
+        <Pressable
+          onPress={() => router.push('/community')}
+          accessibilityRole="button"
+          accessibilityLabel="Ouvrir la carte et les challenges du quartier"
+          style={styles.pulsePressable}>
+        <Card style={styles.pulseCard}>
+          <View style={styles.pulseHeader}>
+            <View style={[styles.pulseIconWrap, { backgroundColor: `${colors.tint}22` }]}>
+              <MaterialIcons name="location-on" size={14} color={colors.tint} />
+            </View>
+            <View style={styles.pulseTextWrap}>
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>Pulse quartier</ThemedText>
+              <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                {nearbyCount} objets proches · {NEIGHBORHOOD_PULSE.loopsThisWeek} échanges cette semaine
+              </ThemedText>
+            </View>
+          </View>
+        </Card>
+        </Pressable>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+          {DISCOVER_FILTERS.map((category) => {
+            const active = category === activeCategory;
+            return (
+              <Pressable
+                key={category}
+                onPress={() => setActiveCategory(category)}
+                accessibilityRole="button"
+                accessibilityLabel={`Filtrer par ${category}`}
+                accessibilityState={{ selected: active }}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: active ? colors.tint : colors.surface,
+                    borderColor: active ? colors.tint : colors.border,
+                  },
+                ]}>
+                <ThemedText
+                  type="defaultSemiBold"
+                  style={{ color: active ? '#FFFFFF' : colors.text, fontSize: 13, lineHeight: 18 }}>
+                  {category}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.listWrap}>
+          {filtered.map((objectItem) => (
+            <ObjectCard
+              key={objectItem.id}
+              title={objectItem.title}
+              description={objectItem.description}
+              imageUrl={objectItem.imageUrl}
+              distanceKm={objectItem.distanceKm}
+              ownerName={objectItem.ownerName}
+              responseTime={objectItem.responseTime}
+              isFree={objectItem.isFree}
+              trustScore={objectItem.trustScore}
+              loopsCompleted={objectItem.loopsCompleted}
+              onPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
+              onBorrowPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
+            />
+          ))}
+        </View>
+          </View>
+        </ScrollView>
       </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  safeArea: {
+    flex: 1,
   },
-  titleContainer: {
+  container: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+  screenWrap: {
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
+    gap: 14,
+  },
+  headerBlock: {
+    gap: 4,
+  },
+  chipsRow: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  chip: {
+    borderRadius: Radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  pulseCard: {
+    gap: 6,
+    paddingVertical: 12,
+  },
+  pulsePressable: {
+    borderRadius: Radius.lg,
+    opacity: 0.92,
+  },
+  pulseHeader: {
     flexDirection: 'row',
     gap: 8,
+  },
+  pulseIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  pulseTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  listWrap: {
+    gap: 12,
   },
 });
