@@ -30,8 +30,8 @@ partage, prêt, voisinage, local, objets, communauté, recyclage, économie
 
 ## Mentions conformité
 
-- Politique de confidentialité: https://tooloop.app/privacy
-- CGU: https://tooloop.app/terms
+- Politique de confidentialité: https://OWNER.github.io/REPO/privacy.html
+- CGU: https://OWNER.github.io/REPO/terms.html
 - Contact support: contact@tooloop.app
 
 ## Notes opérationnelles

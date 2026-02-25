@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -11,10 +11,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { DISCOVER_OBJECTS, getObjectStoryById } from '@/data/mock';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { DISCOVER_OBJECTS, getObjectStoryById, useBackendDataVersion } from '@/lib/backend/data';
 import { estimateObjectPrice } from '@/lib/price-estimator';
+import { getStoryContributionsByObjectId } from '@/stores/object-story-store';
 
 const DURATIONS = [
   { label: '1 jour', value: '1j' },
@@ -23,6 +24,7 @@ const DURATIONS = [
 ] as const;
 
 export default function ObjectDetailScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -30,8 +32,10 @@ export default function ObjectDetailScreen() {
   const resolvedTheme = colorScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[resolvedTheme];
 
+  const text = useThemeColor({}, 'text');
   const mutedText = useThemeColor({}, 'mutedText');
-  const [selectedDuration, setSelectedDuration] = useState<(typeof DURATIONS)[number]['value']>('1j');
+  const [selectedDuration, setSelectedDuration] = useState<string>('1j');
+  const [customDuration, setCustomDuration] = useState('');
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [requestSubmitted, setRequestSubmitted] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -63,6 +67,60 @@ export default function ObjectDetailScreen() {
 
     return getObjectStoryById(objectItem.id) ?? null;
   }, [objectItem]);
+
+  const storyContributions = useMemo(() => {
+    if (!objectItem) {
+      return [];
+    }
+
+    return getStoryContributionsByObjectId(objectItem.id);
+  }, [objectItem]);
+
+  const keyStoryMoments = useMemo(() => {
+    if (!objectStory) {
+      return [];
+    }
+
+    const prioritized = objectStory.moments.filter((moment) =>
+      /(record|premier|impact)/i.test(moment.label),
+    );
+
+    return (prioritized.length > 0 ? prioritized : objectStory.moments).slice(0, 3);
+  }, [objectStory]);
+
+  const storyPreviewPhotos = useMemo(() => {
+    if (!objectStory) {
+      return [];
+    }
+
+    const sourcePhotos = objectStory.photoMemories.length > 0 ? objectStory.photoMemories : [objectItem?.imageUrl ?? ''];
+    const cleaned = sourcePhotos.filter(Boolean);
+    if (cleaned.length === 0) {
+      return [];
+    }
+
+    if (cleaned.length >= 3) {
+      return cleaned.slice(0, 3);
+    }
+
+    if (cleaned.length === 2) {
+      return [cleaned[0], cleaned[1], cleaned[0]];
+    }
+
+    return [cleaned[0], cleaned[0], cleaned[0]];
+  }, [objectItem?.imageUrl, objectStory]);
+
+  const selectedDurationLabel = useMemo(() => {
+    if (selectedDuration === 'other') {
+      return customDuration.trim() || 'durée personnalisée';
+    }
+
+    return DURATIONS.find((durationOption) => durationOption.value === selectedDuration)?.label ?? selectedDuration;
+  }, [customDuration, selectedDuration]);
+
+  const openTrust = (userName: string, role: 'prêteur' | 'emprunteur') => {
+    router.push({ pathname: '/trust', params: { userName, role } });
+  };
 
   if (!objectItem) {
     return (
@@ -102,6 +160,9 @@ export default function ObjectDetailScreen() {
         }>
         <ThemedView style={styles.page}>
           <Card style={styles.heroCard}>
+            <View style={styles.heroImageWrap}>
+              <Image source={{ uri: objectItem.imageUrl }} style={styles.heroImage} contentFit="cover" />
+            </View>
             <ThemedText type="title">{objectItem.title}</ThemedText>
             <ThemedText style={[styles.subtitle, { color: mutedText }]}>{objectItem.description}</ThemedText>
 
@@ -114,65 +175,22 @@ export default function ObjectDetailScreen() {
           <Card>
             <ThemedText type="defaultSemiBold">Propriétaire</ThemedText>
             <View style={styles.ownerRow}>
-              <Avatar name={objectItem.ownerName} size={44} />
+              <Pressable
+                onPress={() => openTrust(objectItem.ownerName, 'prêteur')}
+                accessibilityRole="button"
+                accessibilityLabel={`Ouvrir la confiance de ${objectItem.ownerName}`}>
+                <Avatar name={objectItem.ownerName} size={44} />
+              </Pressable>
               <View>
                 <ThemedText type="defaultSemiBold">{objectItem.ownerName}</ThemedText>
                 <ThemedText style={{ color: mutedText }}>Répond en {objectItem.responseTime}</ThemedText>
+                <ThemedText style={{ color: colors.tint, fontSize: 12 }}>Voir la confiance locale</ThemedText>
               </View>
             </View>
           </Card>
 
-          {priceEstimate ? (
-            <Card>
-              <ThemedText type="defaultSemiBold">Économie estimée</ThemedText>
-              <View style={styles.estimateRow}>
-                <Badge label={`Fiabilité ${priceEstimate.confidence}`} variant="neutral" />
-                <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                  Basé sur {priceEstimate.sampleSize} références locales (sans API payante)
-                </ThemedText>
-              </View>
-              <ThemedText type="subtitle">Jusqu’à {priceEstimate.estimatedNewPriceEur} € évités</ThemedText>
-              <ThemedText style={{ color: mutedText }}>
-                Fourchette achat neuf estimée: {priceEstimate.lowRangeEur} € – {priceEstimate.highRangeEur} €
-              </ThemedText>
-            </Card>
-          ) : null}
-
-          {objectStory ? (
-            <Card>
-              <ThemedText type="defaultSemiBold">Mini-story de l’objet</ThemedText>
-              <ThemedText style={{ color: mutedText }}>
-                {objectStory.totalLoans} prêts passés · {objectStory.anecdote}
-              </ThemedText>
-
-              <View style={styles.storyBadgeRow}>
-                {objectStory.badges.map((storyBadge) => (
-                  <Badge key={storyBadge} label={storyBadge} variant="neutral" />
-                ))}
-              </View>
-
-              <View style={styles.storyMomentsWrap}>
-                {objectStory.moments.map((moment) => (
-                  <View key={moment.id} style={styles.storyMomentRow}>
-                    <View style={[styles.storyDot, { backgroundColor: colors.tint }]} />
-                    <View style={styles.storyMomentTextWrap}>
-                      <ThemedText type="defaultSemiBold">{moment.label}</ThemedText>
-                      <ThemedText style={{ color: mutedText, fontSize: 12 }}>{moment.detail}</ThemedText>
-                    </View>
-                  </View>
-                ))}
-              </View>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyPhotosRow}>
-                {objectStory.photoMemories.map((photoUri, index) => (
-                  <Image key={`${photoUri}-${index}`} source={{ uri: photoUri }} style={styles.storyPhoto} contentFit="cover" />
-                ))}
-              </ScrollView>
-            </Card>
-          ) : null}
-
           <Card>
-            <ThemedText type="defaultSemiBold">Durée souhaitée</ThemedText>
+            <ThemedText type="defaultSemiBold">Demande de prêt</ThemedText>
             <View style={styles.durationRow}>
               {DURATIONS.map((durationOption) => {
                 const isActive = selectedDuration === durationOption.value;
@@ -195,26 +213,122 @@ export default function ObjectDetailScreen() {
                   </Pressable>
                 );
               })}
+              <Pressable
+                onPress={() => setSelectedDuration('other')}
+                style={[
+                  styles.durationPill,
+                  {
+                    borderColor: selectedDuration === 'other' ? colors.tint : colors.border,
+                    backgroundColor: selectedDuration === 'other' ? colors.surface : 'transparent',
+                  },
+                ]}>
+                <ThemedText
+                  type={selectedDuration === 'other' ? 'defaultSemiBold' : 'default'}
+                  style={{ color: selectedDuration === 'other' ? colors.tint : colors.text }}>
+                  Autre
+                </ThemedText>
+              </Pressable>
             </View>
+            {selectedDuration === 'other' ? (
+              <View style={styles.customDurationWrap}>
+                <ThemedText type="defaultSemiBold">Nombre de jours (libre)</ThemedText>
+                <TextInput
+                  value={customDuration}
+                  onChangeText={setCustomDuration}
+                  placeholder="Ex: 10 jours"
+                  placeholderTextColor={mutedText}
+                  style={[styles.customDurationInput, { color: text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                />
+              </View>
+            ) : null}
             <ThemedText style={[styles.subtitle, { color: mutedText }]}> 
               Vous pouvez ajuster la durée ensuite en discutant avec le prêteur.
             </ThemedText>
+
+            {!requestSubmitted ? (
+              <Button label="Envoyer la demande" onPress={requestLoan} loading={isSendingRequest} />
+            ) : (
+              <View style={styles.requestSentCard}>
+                <ThemedText type="defaultSemiBold">✅ Demande envoyée</ThemedText>
+                <ThemedText style={{ color: mutedText }}>
+                  Ta demande pour {objectItem.title} ({selectedDurationLabel}) est en attente d’acceptation par {objectItem.ownerName}.
+                </ThemedText>
+                <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                  Tu pourras continuer l’échange après acceptation (chat + pass d’échange).
+                </ThemedText>
+                <Button label="Voir mes échanges" variant="secondary" onPress={() => router.push('/(tabs)/inbox')} />
+              </View>
+            )}
           </Card>
 
-          {!requestSubmitted ? (
-            <Button label="Envoyer la demande" onPress={requestLoan} loading={isSendingRequest} />
-          ) : (
-            <Card style={styles.requestSentCard}>
-              <ThemedText type="defaultSemiBold">✅ Demande envoyée</ThemedText>
+          {priceEstimate ? (
+            <Card>
+              <ThemedText type="defaultSemiBold">Économie estimée</ThemedText>
+              <View style={styles.estimateRow}>
+                <Badge label={`Fiabilité ${priceEstimate.confidence}`} variant="neutral" />
+                <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                  Basé sur {priceEstimate.sampleSize} références locales (sans API payante)
+                </ThemedText>
+              </View>
+              <ThemedText type="subtitle">Jusqu’à {priceEstimate.estimatedNewPriceEur} € évités</ThemedText>
               <ThemedText style={{ color: mutedText }}>
-                Ta demande pour {objectItem.title} ({selectedDuration}) est en attente d’acceptation par {objectItem.ownerName}.
+                Fourchette achat neuf estimée: {priceEstimate.lowRangeEur} € – {priceEstimate.highRangeEur} €
               </ThemedText>
-              <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                Tu pourras continuer l’échange après acceptation (chat + pass d’échange).
-              </ThemedText>
-              <Button label="Voir mes échanges" variant="secondary" onPress={() => router.push('/(tabs)/inbox')} />
             </Card>
-          )}
+          ) : null}
+
+          {objectStory ? (
+            <Card>
+              <ThemedText type="defaultSemiBold">Mini-story de l’objet</ThemedText>
+              <View style={styles.storyMomentsWrap}>
+                {keyStoryMoments.map((moment) => (
+                  <View key={moment.id} style={styles.storyMomentRow}>
+                    <View style={[styles.storyDot, { backgroundColor: colors.tint }]} />
+                    <View style={styles.storyMomentTextWrap}>
+                      <ThemedText type="defaultSemiBold">{moment.label}</ThemedText>
+                      <ThemedText style={{ color: mutedText, fontSize: 12 }}>{moment.detail}</ThemedText>
+                    </View>
+                  </View>
+                ))}
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyPhotosRow}>
+                {storyPreviewPhotos.map((photoUri, index) => (
+                  <Image key={`${photoUri}-${index}`} source={{ uri: photoUri }} style={styles.storyPhoto} contentFit="cover" />
+                ))}
+              </ScrollView>
+              <Button
+                label="Voir toute la mini-story"
+                variant="secondary"
+                onPress={() => router.push({ pathname: '/object/story/[id]', params: { id: objectItem.id } })}
+              />
+
+              {storyContributions.length > 0 ? (
+                <View style={styles.borrowerContribWrap}>
+                  <ThemedText type="defaultSemiBold">Ajouts emprunteurs</ThemedText>
+                  {storyContributions.map((contribution) => (
+                    <View key={contribution.id} style={[styles.borrowerContribCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                      <Image source={{ uri: contribution.photoUri }} style={styles.storyPhoto} contentFit="cover" />
+                      <View style={styles.borrowerContribTextWrap}>
+                        <View style={styles.borrowerHeaderRow}>
+                          <Pressable
+                            onPress={() => openTrust(contribution.authorName, 'emprunteur')}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Ouvrir la confiance de ${contribution.authorName}`}>
+                            <Avatar name={contribution.authorName} size={24} />
+                          </Pressable>
+                          <ThemedText type="defaultSemiBold">{contribution.authorName}</ThemedText>
+                        </View>
+                        {contribution.comment ? (
+                          <ThemedText style={{ color: mutedText, fontSize: 12 }}>{contribution.comment}</ThemedText>
+                        ) : null}
+                        <ThemedText style={{ color: mutedText, fontSize: 11 }}>{contribution.createdAtLabel}</ThemedText>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </Card>
+          ) : null}
         </ThemedView>
       </ScrollView>
     </SafeAreaView>
@@ -234,10 +348,18 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    gap: Spacing.md,
+    gap: Spacing.lg,
   },
   heroCard: {
-    gap: Spacing.sm,
+    gap: Spacing.md,
+  },
+  heroImageWrap: {
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  heroImage: {
+    width: '100%',
+    height: 210,
   },
   subtitle: {
     lineHeight: 20,
@@ -265,7 +387,7 @@ const styles = StyleSheet.create({
   },
   storyMomentsWrap: {
     marginTop: Spacing.sm,
-    gap: Spacing.xs,
+    gap: Spacing.sm,
   },
   storyMomentRow: {
     flexDirection: 'row',
@@ -292,19 +414,52 @@ const styles = StyleSheet.create({
     height: 82,
     borderRadius: Radius.md,
   },
+  borrowerContribWrap: {
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  borrowerContribCard: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    alignItems: 'center',
+  },
+  borrowerContribTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  borrowerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
   durationRow: {
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  customDurationWrap: {
+    marginTop: Spacing.md,
     gap: Spacing.xs,
+  },
+  customDurationInput: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    fontSize: 15,
   },
   durationPill: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.md,
     borderWidth: 1,
     borderRadius: Radius.full,
   },
   requestSentCard: {
-    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
   },
 });

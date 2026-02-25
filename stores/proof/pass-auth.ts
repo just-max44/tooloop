@@ -1,4 +1,4 @@
-import type { ExchangePass } from '@/data/mock';
+import type { ExchangePass } from '@/lib/backend/data';
 
 export type ExchangeStep = 'pickup' | 'return';
 

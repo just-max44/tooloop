@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,8 +13,10 @@ import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius } from '@/constants/theme';
-import { getExchangePassByLoanId, INBOX_LOANS } from '@/data/mock';
+import { useProofBackToInbox } from '@/hooks/use-proof-back-to-inbox';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getExchangePassByLoanId, INBOX_LOANS, useBackendDataVersion } from '@/lib/backend/data';
+import { showAppNotice } from '@/stores/app-notice-store';
 import { getStepQrPayload, getStepVerifierCode, isExchangeQrPayload } from '@/stores/proof/pass-auth';
 import {
     formatReturnDateLabel,
@@ -24,7 +26,6 @@ import {
 } from '@/stores/proof/return-timing-store';
 
 type ValidationMethod = 'qr' | 'code';
-type SimulatedRole = 'lender' | 'borrower';
 
 function getDefaultReturnDate() {
   const nextDay = new Date();
@@ -40,8 +41,10 @@ function toISODate(dateValue: Date) {
 }
 
 export default function PickupProofScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
+  useProofBackToInbox();
   const insets = useSafeAreaInsets();
 
   const border = useThemeColor({}, 'border');
@@ -58,6 +61,7 @@ export default function PickupProofScreen() {
   const [partnerCode, setPartnerCode] = useState('');
   const [pickupChecked, setPickupChecked] = useState(false);
   const [methodSuccessMessage, setMethodSuccessMessage] = useState<string | null>(null);
+  const [continueHint, setContinueHint] = useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -65,10 +69,8 @@ export default function PickupProofScreen() {
 
   const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [loanId]);
   const pass = useMemo(() => (loanId ? getExchangePassByLoanId(loanId) : undefined), [loanId]);
-  const initialRole: SimulatedRole = loan?.direction === 'outgoing' ? 'lender' : 'borrower';
-  const [simulatedRole, setSimulatedRole] = useState<SimulatedRole>(initialRole);
-  const isBorrower = simulatedRole === 'borrower';
-  const isLender = simulatedRole === 'lender';
+  const isBorrower = loan?.direction === 'incoming';
+  const isLender = loan?.direction === 'outgoing';
 
   const [returnDateISO, setReturnDateISOState] = useState<string | null>(() =>
     loanId ? getPickupReturnDateISO(loanId) : null
@@ -91,11 +93,11 @@ export default function PickupProofScreen() {
           setDateDraft(new Date(existingDateISO));
         }
       }
-      setSimulatedRole(loan?.direction === 'outgoing' ? 'lender' : 'borrower');
       setMethodValidated(false);
       setMethodSuccessMessage(null);
       setPickupChecked(false);
-    }, [loan?.direction, loanId])
+      setContinueHint(null);
+    }, [loanId])
   );
 
   void refreshKey;
@@ -114,6 +116,25 @@ export default function PickupProofScreen() {
     );
   }
 
+  if (borrowerAccepted) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>
+        <ThemedView style={styles.container}>
+          <Card style={styles.card}>
+            <ThemedText type="subtitle">Remise déjà validée</ThemedText>
+            <ThemedText style={{ color: mutedText }}>
+              Cette étape est verrouillée. Le formulaire de remise n’est plus accessible.
+            </ThemedText>
+            <Button
+              label="Retour au pass d’échange"
+              onPress={() => router.replace({ pathname: '/proof/[loanId]', params: { loanId } })}
+            />
+          </Card>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
+
   const hasReturnDate = !!returnDateISO;
 
   const ensureReturnDateExists = () => {
@@ -121,11 +142,11 @@ export default function PickupProofScreen() {
       return true;
     }
 
-    Alert.alert(
-      'Date de retour requise',
+    showAppNotice(
       isLender
-        ? 'Renseigne une date de retour avec le calendrier avant de continuer.'
-        : 'Le prêteur doit d’abord renseigner la date de retour prévue.'
+        ? 'Date de retour requise: renseigne-la avec le calendrier avant de continuer.'
+        : 'Le prêteur doit d’abord renseigner la date de retour prévue.',
+      'warning'
     );
     return false;
   };
@@ -155,14 +176,14 @@ export default function PickupProofScreen() {
     }
 
     if (Platform.OS === 'web') {
-      Alert.alert('Scan indisponible', 'Le scan caméra est disponible sur iOS et Android.');
+      showAppNotice('Scan indisponible: le scan caméra est disponible sur iOS et Android.', 'warning');
       return;
     }
 
     if (!cameraPermission?.granted) {
       const permissionResponse = await requestCameraPermission();
       if (!permissionResponse.granted) {
-        Alert.alert('Autorisation requise', 'Active l’accès caméra pour scanner le QR partenaire.');
+        showAppNotice('Autorisation caméra requise pour scanner le QR partenaire.', 'warning');
         return;
       }
     }
@@ -194,13 +215,13 @@ export default function PickupProofScreen() {
     try {
       parsedPayload = JSON.parse(data);
     } catch {
-      Alert.alert('QR invalide', 'Le QR scanné n’est pas un pass Tooloop valide.');
+      showAppNotice('QR invalide: le QR scanné n’est pas un pass Tooloop valide.', 'error');
       setTimeout(() => setScannerLocked(false), 350);
       return;
     }
 
     if (!isExchangeQrPayload(parsedPayload)) {
-      Alert.alert('QR invalide', 'Format de pass non reconnu.');
+      showAppNotice('QR invalide: format de pass non reconnu.', 'error');
       setTimeout(() => setScannerLocked(false), 350);
       return;
     }
@@ -210,13 +231,14 @@ export default function PickupProofScreen() {
       parsedPayload.step !== 'pickup' ||
       parsedPayload.verifierCode !== stepCode
     ) {
-      Alert.alert('QR non correspondant', 'Ce QR ne correspond pas à la validation du prêt.');
+      showAppNotice('QR non correspondant: ce QR ne correspond pas à la validation du prêt.', 'error');
       setTimeout(() => setScannerLocked(false), 350);
       return;
     }
 
     setMethodValidated(true);
     setMethodSuccessMessage('QR partenaire confirmé. Tu peux passer au récapitulatif.');
+    setContinueHint(null);
     setIsScannerOpen(false);
   };
 
@@ -231,19 +253,20 @@ export default function PickupProofScreen() {
 
     const normalized = partnerCode.trim().toUpperCase();
     if (!normalized) {
-      Alert.alert('Code requis', 'Saisis le code partenaire pour continuer.');
+      showAppNotice('Code requis: saisis le code partenaire pour continuer.', 'warning');
       return;
     }
 
     if (normalized !== stepCode) {
       setMethodValidated(false);
       setMethodSuccessMessage(null);
-      Alert.alert('Code invalide', 'Le code saisi ne correspond pas à cette étape de prêt.');
+      showAppNotice('Code invalide: le code saisi ne correspond pas à cette étape de prêt.', 'error');
       return;
     }
 
     setMethodValidated(true);
     setMethodSuccessMessage('Code partenaire confirmé. Tu peux passer au récapitulatif.');
+    setContinueHint(null);
   };
 
   const continueToRecap = () => {
@@ -256,10 +279,11 @@ export default function PickupProofScreen() {
     }
 
     if (!methodValidated || !pickupChecked) {
-      Alert.alert('Étapes manquantes', 'Valide la méthode choisie puis confirme la remise de l’objet.');
+      setContinueHint('Valide la méthode choisie puis confirme la remise de l’objet pour continuer.');
       return;
     }
 
+    setContinueHint(null);
     router.push({ pathname: '/proof/pickup-review/[loanId]', params: { loanId, as: 'borrower' } });
   };
 
@@ -284,44 +308,6 @@ export default function PickupProofScreen() {
               <ThemedText style={{ color: mutedText }}>
                 {loan.objectName} avec {loan.otherUserName}
               </ThemedText>
-              <View style={styles.roleSwitchRow}>
-                <Pressable
-                  onPress={() => {
-                    setSimulatedRole('lender');
-                    setMethodValidated(false);
-                    setMethodSuccessMessage(null);
-                    setPickupChecked(false);
-                  }}
-                  style={[
-                    styles.roleSwitchButton,
-                    {
-                      borderColor: simulatedRole === 'lender' ? tint : border,
-                      backgroundColor: simulatedRole === 'lender' ? `${tint}18` : surface,
-                    },
-                  ]}>
-                  <ThemedText type="defaultSemiBold" style={{ color: simulatedRole === 'lender' ? tint : text }}>
-                    Mode test: Prêteur
-                  </ThemedText>
-                </Pressable>
-                <Pressable
-                  onPress={() => {
-                    setSimulatedRole('borrower');
-                    setMethodValidated(false);
-                    setMethodSuccessMessage(null);
-                    setPickupChecked(false);
-                  }}
-                  style={[
-                    styles.roleSwitchButton,
-                    {
-                      borderColor: simulatedRole === 'borrower' ? tint : border,
-                      backgroundColor: simulatedRole === 'borrower' ? `${tint}18` : surface,
-                    },
-                  ]}>
-                  <ThemedText type="defaultSemiBold" style={{ color: simulatedRole === 'borrower' ? tint : text }}>
-                    Mode test: Emprunteur
-                  </ThemedText>
-                </Pressable>
-              </View>
               <View style={styles.returnDateRow}>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>Date de retour prévue</ThemedText>
                 <View style={[styles.returnDateDisplay, { borderColor: border, backgroundColor: surface }]}>
@@ -363,6 +349,14 @@ export default function PickupProofScreen() {
                   ? 'Choisis une méthode et vérifie les informations avant validation finale.'
                   : 'Partage ensuite le QR ou le code à l’emprunteur pour sa validation.'}
               </ThemedText>
+              {isBorrower && methodValidated ? (
+                <View style={[styles.successInline, { borderColor: `${tint}66`, backgroundColor: `${tint}16` }]}>
+                  <MaterialIcons name="check-circle" size={16} color={tint} />
+                  <ThemedText style={{ color: text, fontSize: 13 }}>
+                    Méthode validée. Coche “J’ai bien reçu l’objet” pour continuer.
+                  </ThemedText>
+                </View>
+              ) : null}
             </Card>
 
             <Card style={styles.card}>
@@ -502,7 +496,10 @@ export default function PickupProofScreen() {
               <Card style={styles.card}>
                 <Pressable
                   style={[styles.checkItem, { borderColor: border, backgroundColor: surface }]}
-                  onPress={() => setPickupChecked((value) => !value)}
+                  onPress={() => {
+                    setPickupChecked((value) => !value);
+                    setContinueHint(null);
+                  }}
                   accessibilityRole="checkbox"
                   accessibilityLabel="Remise objet effectuée"
                   accessibilityState={{ checked: pickupChecked }}>
@@ -517,10 +514,17 @@ export default function PickupProofScreen() {
                 </Pressable>
 
                 <Button
-                  label="Voir le récapitulatif"
+                  label="Continuer vers le récapitulatif"
                   onPress={continueToRecap}
-                  disabled={!methodValidated || !pickupChecked || !hasReturnDate}
+                  disabled={!hasReturnDate}
                 />
+
+                {continueHint ? (
+                  <View style={[styles.warningInline, { borderColor: border, backgroundColor: surface }]}>
+                    <MaterialIcons name="info-outline" size={16} color={mutedText} />
+                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>{continueHint}</ThemedText>
+                  </View>
+                ) : null}
               </Card>
             ) : (
               <Card style={styles.card}>
@@ -564,19 +568,6 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: 10,
-  },
-  roleSwitchRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  roleSwitchButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
   },
   returnDateRow: {
     gap: 8,
@@ -641,6 +632,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   successInline: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    minHeight: 40,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  warningInline: {
     borderWidth: 1,
     borderRadius: Radius.md,
     minHeight: 40,

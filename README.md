@@ -69,9 +69,9 @@ npx tsc --noEmit
 
 ## Notes techniques MVP
 
-- La logique d’état est locale (stores en mémoire) pour le front MVP.
-- Les données proviennent de `data/mock.ts`.
-- Aucun backend persistant n’est branché à ce stade.
+- La logique d’état combine stores locaux (workflow UI) et backend Supabase.
+- Les données applicatives proviennent de `lib/backend/data.ts`.
+- Le backend persistant est branché via Supabase (auth + tables métier).
 
 ## Publication stores
 
@@ -82,6 +82,10 @@ Documents légaux MVP disponibles :
 - `docs/PRIVACY_POLICY.md`
 - `docs/TERMS_AND_CONDITIONS.md`
 - `docs/STORE_METADATA.md`
+
+Configuration backend MVP (Supabase) :
+
+- `docs/BACKEND_SETUP.md`
 
 Avant soumission, vérifier au minimum:
 

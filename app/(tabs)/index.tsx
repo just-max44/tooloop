@@ -12,11 +12,12 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Colors, Radius } from '@/constants/theme';
-import { DISCOVER_OBJECTS, PERSONALIZED_SUGGESTIONS } from '@/data/mock';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { DISCOVER_OBJECTS, PERSONALIZED_SUGGESTIONS, useBackendDataVersion } from '@/lib/backend/data';
 
 export default function HomeScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
   const colorScheme = useColorScheme();
@@ -136,27 +137,37 @@ export default function HomeScreen() {
             <ThemedText type="subtitle">Suggestions personnalisées</ThemedText>
           </View>
           <View style={styles.suggestionList}>
-            {suggestions.map((suggestionItem) => {
-              const objectItem = suggestionItem.object;
-              if (!objectItem) {
-                return null;
-              }
+            {suggestions.length === 0 ? (
+              <Card style={[styles.emptySuggestionsCard, { borderColor: colors.border }]}>
+                <ThemedText type="defaultSemiBold">Pas encore de suggestions personnalisées</ThemedText>
+                <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                  En attendant, découvre les offres disponibles autour de toi.
+                </ThemedText>
+                <Button label="Voir les offres" variant="secondary" onPress={() => router.push('/(tabs)/explore')} />
+              </Card>
+            ) : (
+              suggestions.map((suggestionItem) => {
+                const objectItem = suggestionItem.object;
+                if (!objectItem) {
+                  return null;
+                }
 
-              return (
-                <Pressable
-                  key={suggestionItem.id}
-                  onPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
-                  style={[styles.suggestionRow, { borderColor: colors.border, backgroundColor: colors.surface }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Ouvrir ${objectItem.title}`}>
-                  <View style={styles.suggestionTextWrap}>
-                    <ThemedText type="defaultSemiBold">{objectItem.title}</ThemedText>
-                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>{suggestionItem.reason}</ThemedText>
-                  </View>
-                  <MaterialIcons name="chevron-right" size={18} color={mutedText} />
-                </Pressable>
-              );
-            })}
+                return (
+                  <Pressable
+                    key={suggestionItem.id}
+                    onPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
+                    style={[styles.suggestionRow, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ouvrir ${objectItem.title}`}>
+                    <View style={styles.suggestionTextWrap}>
+                      <ThemedText type="defaultSemiBold">{objectItem.title}</ThemedText>
+                      <ThemedText style={{ color: mutedText, fontSize: 12 }}>{suggestionItem.reason}</ThemedText>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={18} color={mutedText} />
+                  </Pressable>
+                );
+              })
+            )}
           </View>
         </Card>
 
@@ -318,5 +329,9 @@ const styles = StyleSheet.create({
   suggestionTextWrap: {
     flex: 1,
     gap: 2,
+  },
+  emptySuggestionsCard: {
+    borderWidth: 1,
+    gap: 8,
   },
 });

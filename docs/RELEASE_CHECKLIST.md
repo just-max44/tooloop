@@ -38,10 +38,11 @@
 
 ## 6) Conformité stores
 
-- [ ] Politique de confidentialité publique (URL)
+- [ ] Politique de confidentialité publique (URL active)
 - [x] CGU rédigées (`docs/TERMS_AND_CONDITIONS.md`)
 - [x] Politique de confidentialité rédigée (`docs/PRIVACY_POLICY.md`)
 - [x] CGU accessibles depuis l’app
+- [x] Suppression de compte déclenchable depuis l’app (fonction `delete-account` à déployer)
 - [ ] Déclaration collecte de données (Play + App Store)
 - [ ] Permissions strictement nécessaires
 
@@ -60,3 +61,12 @@
 - [ ] Validation métier finale
 - [ ] Soumission Play Console
 - [ ] Soumission App Store Connect
+
+## 9) Bloquants actuels à lever
+
+- [ ] Publier les pages légales via GitHub Pages (`docs/privacy.html` et `docs/terms.html`) puis renseigner les URLs stores
+- [ ] Déployer l’Edge Function: `supabase functions deploy delete-account`
+- [ ] Compléter les formulaires "Data safety" (Play) et "App Privacy" (Apple)
+- [ ] Produire screenshots finaux Android + iOS et finaliser la fiche store
+
+Guide: `docs/GITHUB_PAGES_SETUP.md`

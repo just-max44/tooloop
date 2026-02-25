@@ -22,6 +22,7 @@ type ObjectCardProps = {
   loopsCompleted?: number;
   onBorrowPress?: () => void;
   onPress?: () => void;
+  onOwnerPress?: () => void;
 };
 
 export function ObjectCard({
@@ -37,6 +38,7 @@ export function ObjectCard({
   loopsCompleted,
   onBorrowPress,
   onPress,
+  onOwnerPress,
 }: ObjectCardProps) {
   const mutedText = useThemeColor({}, 'mutedText');
   const border = useThemeColor({}, 'border');
@@ -85,7 +87,15 @@ export function ObjectCard({
 
           <View style={[styles.metaRow, { borderTopColor: border }]}>
             <View style={styles.ownerRow}>
-              <Avatar name={ownerName} uri={ownerAvatarUrl} size={34} />
+              <Pressable
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onOwnerPress?.();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Ouvrir la confiance de ${ownerName}`}>
+                <Avatar name={ownerName} uri={ownerAvatarUrl} size={34} />
+              </Pressable>
               <View>
                 <ThemedText type="defaultSemiBold">{ownerName}</ThemedText>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>Réponse: {responseTime}</ThemedText>

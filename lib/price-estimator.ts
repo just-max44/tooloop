@@ -1,4 +1,4 @@
-import type { DiscoverObject } from '@/data/mock';
+import type { DiscoverObject } from '@/lib/backend/data';
 
 type EstimateConfidence = 'faible' | 'moyenne' | 'élevée';
 

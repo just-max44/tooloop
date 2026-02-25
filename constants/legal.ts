@@ -1,4 +1,4 @@
-export const LEGAL_URLS = {
-  privacyPolicy: 'https://tooloop.app/privacy',
-  terms: 'https://tooloop.app/terms',
+export const LEGAL_ROUTES = {
+  privacyPolicy: '/legal/privacy',
+  terms: '/legal/terms',
 } as const;

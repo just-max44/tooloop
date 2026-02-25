@@ -3,7 +3,6 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
-    Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -21,11 +20,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius } from '@/constants/theme';
-import { FEEDBACK_CRITERIA, FEEDBACK_IMPACT_LABELS, INBOX_LOANS } from '@/data/mock';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { isFeedbackSubmitted, markFeedbackSubmitted } from '@/stores/feedback-store';
+import { FEEDBACK_CRITERIA, FEEDBACK_IMPACT_LABELS, INBOX_LOANS, PROFILE_USER, useBackendDataVersion } from '@/lib/backend/data';
+import { showAppNotice } from '@/stores/app-notice-store';
+import {
+    isFeedbackSubmitted,
+    markFeedbackSubmitted,
+    upsertTrustExchangeComment,
+} from '@/stores/feedback-store';
 
 export default function FeedbackScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
   const headerHeight = useHeaderHeight();
@@ -88,27 +93,35 @@ export default function FeedbackScreen() {
   };
 
   const submitFeedback = () => {
-    if (!loanId) {
+    if (!loanId || !loan) {
       return;
     }
 
     if (alreadySubmitted) {
-      Alert.alert('Déjà envoyé', 'Ton évaluation a déjà été enregistrée pour cet échange.');
+      showAppNotice('Ton évaluation a déjà été enregistrée pour cet échange.', 'info');
       return;
     }
 
     if (selectedCriteria.length === 0) {
-      Alert.alert('Sélection requise', 'Choisis au moins un signal pour valider ton évaluation.');
+      showAppNotice('Choisis au moins un signal pour valider ton évaluation.', 'warning');
       return;
     }
 
     markFeedbackSubmitted(loanId);
 
-    Alert.alert(
-      'Évaluation envoyée',
-      `Merci. Note de cet échange: ${evaluationPercent}%`,
-      [{ text: 'OK', onPress: () => router.push('/(tabs)/inbox') }],
-    );
+    if (comment.trim().length > 0) {
+      upsertTrustExchangeComment({
+        sourceKey: `feedback-${loanId}`,
+        authorName: PROFILE_USER.firstName,
+        targetUserName: loan.otherUserName,
+        loanObjectName: loan.objectName,
+        comment,
+        timeLabel: 'Maintenant',
+      });
+    }
+
+    showAppNotice(`Évaluation envoyée. Note: ${evaluationPercent}%`, 'success');
+    router.push('/(tabs)/inbox');
   };
 
   if (!loan) {

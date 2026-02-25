@@ -5,28 +5,28 @@ Dernière mise à jour : 2026-02-23
 ## Légende
 
 - ✅ Fait (implémenté en front)
-- 🟡 Partiel (présent en UI/mocks mais pas complet backend)
+- 🟡 Partiel (présent en UI mais pas complet backend)
 - ⛔ Non fait (prévu, pas encore implémenté)
 
 ## 1) Authentification
 
-- ⛔ Inscription email + mot de passe
+- ✅ Inscription email + mot de passe
 - ⛔ Connexion Google
-- 🟡 Profil utilisateur minimal (écran Profil présent, données mock)
+- 🟡 Profil utilisateur minimal (écran Profil présent, backend branché partiellement)
 
 ## 2) Gestion des objets
 
 - ✅ Ajouter un objet (écran Post + formulaire)
 - ⛔ Modifier un objet
 - ⛔ Supprimer un objet
-- 🟡 Marquer disponible / indisponible (visible sur profil mock, pas de logique persistée)
+- 🟡 Marquer disponible / indisponible (visible sur profil, logique persistée partielle)
 - ✅ Découvrir/rechercher des objets (écran Discover + filtres)
 - 🟡 Estimation prix neuf / économie (algo local + affichage, sans source live externe)
 
 ## 3) Système de prêt
 
 - ✅ Demande envoyée (flow UI depuis détail objet)
-- 🟡 Propriétaire accepte / refuse (statuts visibles dans Inbox, logique mock)
+- 🟡 Propriétaire accepte / refuse (statuts visibles dans Inbox, logique persistée partielle)
 - ⛔ Adresse exacte visible après acceptation
 - 🟡 Prêt en cours / completed (statuts UI)
 - ⛔ Photo avant
@@ -49,11 +49,11 @@ Dernière mise à jour : 2026-02-23
 - ⛔ “Je cherche cet objet” (wanted posts)
 - ✅ Badge statut “Actif” en UI
 - 🟡 “Objet partagé X fois” (données simulées, pas de compteur réel)
-- 🟡 Compteur d’impact (pulse quartier en mock)
+- 🟡 Compteur d’impact (pulse quartier en calcul local)
 
 ## 7) Sécurité & confiance
 
-- 🟡 Confiance locale (écran dédié + score + preuves en mock)
+- 🟡 Confiance locale (écran dédié + score + preuves backend partiel)
 - ⛔ Protection d’adresse (règles d’exposition non implémentées)
 - ⛔ Signalement utilisateur
 - ⛔ Blocage utilisateur

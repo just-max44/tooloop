@@ -8,7 +8,7 @@ La logique métier est locale (stores en mémoire), sans persistance serveur à 
 ## 2) Domaines fonctionnels livrés
 
 ### Découvrir
-- Listing d’objets mockés
+- Listing d’objets (backend Supabase)
 - Filtres catégories
 - Recherche fonctionnelle (titre, description, propriétaire)
 - Bloc “Pulse quartier” (activité locale + impact)
@@ -49,7 +49,7 @@ La logique métier est locale (stores en mémoire), sans persistance serveur à 
 - Routage: Expo Router (`app/`)
 - UI: composants `components/ui/`
 - Design tokens: `constants/theme.ts`
-- Données mock: `data/mock.ts`
+- Données backend: `lib/backend/data.ts` (Supabase)
 - Stores locaux (front-only):
   - `app/proof/closure-store.ts`
   - `app/proof/progress-store.ts`

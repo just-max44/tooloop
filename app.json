@@ -8,13 +8,21 @@
     },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F9F7F2"
+    },
     "scheme": "tooloop",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tooloop.app",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Tooloop utilise votre position pour afficher les objets les plus proches."
+      }
     },
     "android": {
       "package": "com.tooloop.app",
@@ -29,7 +37,10 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "INTERNET",
-        "CAMERA"
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -43,6 +54,19 @@
         "expo-camera",
         {
           "cameraPermission": "Autorise Tooloop à utiliser la caméra pour scanner les QR d’échange."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Tooloop utilise votre position pour afficher les objets les plus proches."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#3D8A63"
         }
       ],
       [

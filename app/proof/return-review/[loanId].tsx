@@ -10,8 +10,9 @@ import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius } from '@/constants/theme';
-import { getObjectImageByLoanObjectName, INBOX_LOANS } from '@/data/mock';
+import { useProofBackToInbox } from '@/hooks/use-proof-back-to-inbox';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getObjectImageByLoanObjectName, INBOX_LOANS, useBackendDataVersion } from '@/lib/backend/data';
 import { closeExchange } from '@/stores/proof/closure-store';
 import { setReturnValidated } from '@/stores/proof/progress-store';
 import {
@@ -21,8 +22,10 @@ import {
 } from '@/stores/proof/return-timing-store';
 
 export default function ReturnReviewScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const { loanId, as } = useLocalSearchParams<{ loanId: string; as?: string }>();
+  useProofBackToInbox();
 
   const background = useThemeColor({}, 'background');
   const mutedText = useThemeColor({}, 'mutedText');

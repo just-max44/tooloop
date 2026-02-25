@@ -8,11 +8,13 @@ import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius, Spacing } from '@/constants/theme';
-import { getExchangeMessagesByLoanId, getExchangePassByLoanId, INBOX_LOANS } from '@/data/mock';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getExchangeMessagesByLoanId, getExchangePassByLoanId, INBOX_LOANS, useBackendDataVersion } from '@/lib/backend/data';
+import { notifyEvent } from '@/lib/notifications/events';
 import { getEffectiveLoanState, isExchangeRefused } from '@/stores/proof/closure-store';
 
 export default function ExchangeChatScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
   const insets = useSafeAreaInsets();
@@ -93,6 +95,28 @@ export default function ExchangeChatScreen() {
         timeLabel: 'Maintenant',
       },
     ]);
+
+    setTimeout(() => {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `${loanId}-${Date.now()}-other`,
+          loanId,
+          sender: 'other',
+          text: 'Bien reçu 👍',
+          timeLabel: 'À l’instant',
+        },
+      ]);
+
+      if (loan) {
+        void notifyEvent({
+          type: 'new_message_received',
+          loanId: loan.id,
+          objectName: loan.objectName,
+          otherUserName: loan.otherUserName,
+        });
+      }
+    }, 1200);
   };
 
   if (!loan || !chatAllowed) {

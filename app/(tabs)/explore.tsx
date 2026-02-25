@@ -1,7 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -10,11 +11,12 @@ import { Card } from '@/components/ui/card';
 import { ObjectCard } from '@/components/ui/object-card';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Colors, Radius } from '@/constants/theme';
-import { DISCOVER_FILTERS, DISCOVER_OBJECTS, NEIGHBORHOOD_PULSE } from '@/data/mock';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { DISCOVER_FILTERS, DISCOVER_OBJECTS, NEIGHBORHOOD_PULSE, useBackendDataVersion } from '@/lib/backend/data';
 
 export default function TabTwoScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const colorScheme = useColorScheme();
   const resolvedTheme = colorScheme === 'dark' ? 'dark' : 'light';
@@ -23,11 +25,90 @@ export default function TabTwoScreen() {
 
   const [activeCategory, setActiveCategory] = useState<(typeof DISCOVER_FILTERS)[number]>('Tout');
   const [searchQuery, setSearchQuery] = useState('');
+  const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const [isLocationServiceEnabled, setIsLocationServiceEnabled] = useState<boolean | null>(null);
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [lastLocationLabel, setLastLocationLabel] = useState<string | null>(null);
+
+  const refreshLiveLocation = useCallback(async () => {
+    const servicesEnabled = await Location.hasServicesEnabledAsync();
+    setIsLocationServiceEnabled(servicesEnabled);
+
+    if (!servicesEnabled) {
+      setLastLocationLabel(null);
+      return;
+    }
+
+    const currentPosition = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    setLastLocationLabel(
+      `${currentPosition.coords.latitude.toFixed(4)}, ${currentPosition.coords.longitude.toFixed(4)}`
+    );
+  }, []);
+
+  const syncLocationState = useCallback(async () => {
+    const permission = await Location.getForegroundPermissionsAsync();
+    setLocationPermission(permission.status === 'granted' ? 'granted' : 'denied');
+
+    if (permission.status !== 'granted') {
+      setIsLocationServiceEnabled(null);
+      setLastLocationLabel(null);
+      return;
+    }
+
+    await refreshLiveLocation();
+  }, [refreshLiveLocation]);
+
+  const requestLocationPermission = async () => {
+    if (locationPermission === 'denied') {
+      await Linking.openSettings();
+      return;
+    }
+
+    setIsRequestingLocation(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      const granted = permission.status === 'granted';
+      setLocationPermission(granted ? 'granted' : 'denied');
+
+      if (!granted) {
+        setIsLocationServiceEnabled(null);
+        setLastLocationLabel(null);
+        return;
+      }
+
+      if (Location.enableNetworkProviderAsync) {
+        await Location.enableNetworkProviderAsync().catch(() => {});
+      }
+
+      await refreshLiveLocation();
+    } finally {
+      setIsRequestingLocation(false);
+    }
+  };
+
+  useEffect(() => {
+    syncLocationState().catch(() => {
+      setLocationPermission('denied');
+      setIsLocationServiceEnabled(null);
+      setLastLocationLabel(null);
+      setIsRequestingLocation(false);
+    });
+  }, [syncLocationState]);
+
+  const sortedObjects = useMemo(() => {
+    if (locationPermission !== 'granted') {
+      return DISCOVER_OBJECTS;
+    }
+
+    return [...DISCOVER_OBJECTS].sort((first, second) => first.distanceKm - second.distanceKm);
+  }, [locationPermission]);
 
   const filteredByCategory =
     activeCategory === 'Tout'
-      ? DISCOVER_OBJECTS
-      : DISCOVER_OBJECTS.filter((objectItem) => objectItem.category === activeCategory);
+      ? sortedObjects
+      : sortedObjects.filter((objectItem) => objectItem.category === activeCategory);
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const filtered = filteredByCategory.filter((objectItem) => {
     if (!normalizedSearch) {
@@ -74,10 +155,34 @@ export default function TabTwoScreen() {
               <ThemedText style={{ color: mutedText, fontSize: 12 }}>
                 {nearbyCount} objets proches · {NEIGHBORHOOD_PULSE.loopsThisWeek} échanges cette semaine
               </ThemedText>
+              <ThemedText style={{ color: mutedText, fontSize: 11 }}>
+                {locationPermission === 'granted' && isLocationServiceEnabled
+                  ? `Position active (${lastLocationLabel ?? 'GPS détecté'}). Résultats triés par proximité.`
+                  : locationPermission === 'granted'
+                    ? 'Permission accordée mais GPS du téléphone inactif.'
+                    : 'Position inactive: active-la pour améliorer la recherche autour de toi.'}
+              </ThemedText>
             </View>
           </View>
         </Card>
         </Pressable>
+        {(locationPermission !== 'granted' || !isLocationServiceEnabled) ? (
+          <Pressable
+            onPress={requestLocationPermission}
+            accessibilityRole="button"
+            accessibilityLabel="Activer la position"
+            style={[styles.locationButton, { borderColor: colors.border, backgroundColor: colors.surface }]}
+            disabled={isRequestingLocation}>
+            <MaterialIcons name="my-location" size={14} color={colors.tint} />
+            <ThemedText type="defaultSemiBold" style={{ color: colors.tint, fontSize: 12 }}>
+              {isRequestingLocation
+                ? 'Activation en cours...'
+                : locationPermission === 'denied'
+                  ? 'Ouvrir les réglages localisation'
+                  : 'Activer ma position'}
+            </ThemedText>
+          </Pressable>
+        ) : null}
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
           {DISCOVER_FILTERS.map((category) => {
@@ -107,6 +212,14 @@ export default function TabTwoScreen() {
         </ScrollView>
 
         <View style={styles.listWrap}>
+          {filtered.length === 0 ? (
+            <Card style={[styles.emptyStateCard, { borderColor: colors.border }]}>
+              <ThemedText type="defaultSemiBold">Aucune offre trouvée</ThemedText>
+              <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                Ajuste les filtres ou ta recherche pour afficher des objets proches.
+              </ThemedText>
+            </Card>
+          ) : null}
           {filtered.map((objectItem) => (
             <ObjectCard
               key={objectItem.id}
@@ -119,6 +232,12 @@ export default function TabTwoScreen() {
               isFree={objectItem.isFree}
               trustScore={objectItem.trustScore}
               loopsCompleted={objectItem.loopsCompleted}
+              onOwnerPress={() =>
+                router.push({
+                  pathname: '/trust',
+                  params: { userName: objectItem.ownerName, role: 'prêteur' },
+                })
+              }
               onPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
               onBorrowPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
             />
@@ -166,6 +285,17 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 12,
   },
+  locationButton: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    minHeight: 34,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
   pulsePressable: {
     borderRadius: Radius.lg,
     opacity: 0.92,
@@ -188,5 +318,8 @@ const styles = StyleSheet.create({
   },
   listWrap: {
     gap: 12,
+  },
+  emptyStateCard: {
+    borderWidth: 1,
   },
 });

@@ -1,22 +1,34 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { CATEGORIES } from '@/data/mock';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { CATEGORIES, DISCOVER_OBJECTS, PAST_PUBLICATIONS, useBackendDataVersion } from '@/lib/backend/data';
+import { showAppNotice } from '@/stores/app-notice-store';
+import { addListing, getListingById, updateListing } from '@/stores/listings-store';
 
 type PublicationMode = 'loan' | 'request';
 
 export default function PostScreen() {
+  useBackendDataVersion();
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    listingId?: string;
+    mode?: string;
+    title?: string;
+    description?: string;
+    category?: string;
+    targetPeriod?: string;
+    requiresDeposit?: string;
+  }>();
   const [publicationMode, setPublicationMode] = useState<PublicationMode>('loan');
   const [requiresDeposit, setRequiresDeposit] = useState(false);
   const [title, setTitle] = useState('');
@@ -28,6 +40,10 @@ export default function PostScreen() {
   const [targetPeriodTouched, setTargetPeriodTouched] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<(typeof CATEGORIES)[number]>('Bricolage');
+  const [isPrefillApplied, setIsPrefillApplied] = useState(false);
+  const [prefillSourceLabel, setPrefillSourceLabel] = useState<string | null>(null);
+  const [showPastPublications, setShowPastPublications] = useState(false);
+  const [editingListingId, setEditingListingId] = useState<string | null>(null);
 
   const text = useThemeColor({}, 'text');
   const background = useThemeColor({}, 'background');
@@ -38,6 +54,90 @@ export default function PostScreen() {
   const danger = useThemeColor({}, 'danger');
 
   const isLoanPublication = publicationMode === 'loan';
+
+  const applyPublicationPreset = (preset: {
+    publicationMode: PublicationMode;
+    title: string;
+    description: string;
+    category: (typeof CATEGORIES)[number];
+    targetPeriod?: string;
+    requiresDeposit?: boolean;
+  }) => {
+    setPublicationMode(preset.publicationMode);
+    setTitle(preset.title);
+    setDescription(preset.description);
+    setSelectedCategory(preset.category);
+    setTargetPeriod(preset.targetPeriod ?? '');
+    setRequiresDeposit(Boolean(preset.requiresDeposit));
+    setSubmitAttempted(false);
+    setTitleTouched(false);
+    setDescriptionTouched(false);
+    setTargetPeriodTouched(false);
+    setPrefillSourceLabel(`Annonce préremplie: ${preset.title}`);
+  };
+
+  useEffect(() => {
+    if (isPrefillApplied) {
+      return;
+    }
+
+    const listingId = typeof params.listingId === 'string' ? params.listingId : '';
+    if (listingId) {
+      const listing = getListingById(listingId);
+      if (listing) {
+        applyPublicationPreset({
+          publicationMode: listing.publicationMode,
+          title: listing.title,
+          description: listing.description,
+          category: listing.category,
+          targetPeriod: listing.targetPeriod,
+          requiresDeposit: listing.requiresDeposit,
+        });
+        setEditingListingId(listing.id);
+        setPrefillSourceLabel(`Modification: ${listing.title}`);
+
+        if (listing.publicationMode === 'loan' && listing.linkedObjectId) {
+          const linkedObject = DISCOVER_OBJECTS.find((item) => item.id === listing.linkedObjectId);
+          if (linkedObject?.imageUrl) {
+            setPhotoUri(linkedObject.imageUrl);
+          }
+        }
+
+        setIsPrefillApplied(true);
+        return;
+      }
+    }
+
+    if (!params.title && !params.description) {
+      return;
+    }
+
+    const resolvedMode: PublicationMode = params.mode === 'request' ? 'request' : 'loan';
+    const categoryValue = typeof params.category === 'string' ? params.category : '';
+    const resolvedCategory = CATEGORIES.includes(categoryValue as (typeof CATEGORIES)[number])
+      ? (categoryValue as (typeof CATEGORIES)[number])
+      : 'Bricolage';
+
+    applyPublicationPreset({
+      publicationMode: resolvedMode,
+      title: typeof params.title === 'string' ? params.title : '',
+      description: typeof params.description === 'string' ? params.description : '',
+      category: resolvedCategory,
+      targetPeriod: typeof params.targetPeriod === 'string' ? params.targetPeriod : '',
+      requiresDeposit: params.requiresDeposit === '1',
+    });
+
+    setIsPrefillApplied(true);
+  }, [
+    isPrefillApplied,
+    params.category,
+    params.description,
+    params.listingId,
+    params.mode,
+    params.requiresDeposit,
+    params.targetPeriod,
+    params.title,
+  ]);
 
   const canSubmit = useMemo(
     () =>
@@ -69,10 +169,10 @@ export default function PostScreen() {
   const photoError = isLoanPublication && !photoUri ? 'La photo est obligatoire pour un prêt.' : null;
   const targetPeriodError = !isLoanPublication && targetPeriod.trim().length === 0 ? 'La période souhaitée est requise.' : null;
 
-  const submitSuccessTitle = isLoanPublication ? 'Prêt publié' : 'Recherche publiée';
   const submitSuccessMessage = isLoanPublication
     ? 'Ton objet est prêt à être découvert par les voisins.'
     : 'Ta recherche est visible pour les voisins qui peuvent prêter cet objet.';
+  const isEditing = !!editingListingId;
 
   const switchPublicationMode = (mode: PublicationMode) => {
     if (mode === publicationMode) {
@@ -89,7 +189,7 @@ export default function PostScreen() {
   const pickPhoto = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert('Autorisation requise', 'Autorise l’accès à la galerie pour ajouter une photo.');
+      showAppNotice('Autorise l’accès à la galerie pour ajouter une photo.', 'warning');
       return;
     }
 
@@ -109,7 +209,7 @@ export default function PostScreen() {
   const takePhoto = async () => {
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert('Autorisation requise', 'Autorise l’accès à la caméra pour prendre une photo.');
+      showAppNotice('Autorise l’accès à la caméra pour prendre une photo.', 'warning');
       return;
     }
 
@@ -124,31 +224,41 @@ export default function PostScreen() {
     }
   };
 
-  const submitPost = () => {
+  const submitPost = async () => {
     setSubmitAttempted(true);
     if (!canSubmit) {
       return;
     }
 
-    Alert.alert(submitSuccessTitle, submitSuccessMessage, [
-      {
-        text: isLoanPublication ? 'Voir Découvrir' : 'Voir Échanges',
-        onPress: () => {
-          setTitle('');
-          setDescription('');
-          setTargetPeriod('');
-          setPhotoUri(null);
-          setRequiresDeposit(false);
-          setTitleTouched(false);
-          setDescriptionTouched(false);
-          setTargetPeriodTouched(false);
-          setSubmitAttempted(false);
-          setSelectedCategory('Bricolage');
-          setPublicationMode('loan');
-          router.push(isLoanPublication ? '/(tabs)/explore' : '/(tabs)/inbox');
-        },
-      },
-    ]);
+    const payload = {
+      publicationMode,
+      title: title.trim(),
+      description: description.trim(),
+      category: selectedCategory,
+      targetPeriod: publicationMode === 'request' ? targetPeriod.trim() : undefined,
+      requiresDeposit: publicationMode === 'loan' ? requiresDeposit : undefined,
+    } as const;
+
+    if (editingListingId) {
+      await updateListing(editingListingId, payload);
+    } else {
+      await addListing(payload);
+    }
+
+    showAppNotice(editingListingId ? 'Publication mise à jour.' : submitSuccessMessage, 'success');
+    setTitle('');
+    setDescription('');
+    setTargetPeriod('');
+    setPhotoUri(null);
+    setRequiresDeposit(false);
+    setTitleTouched(false);
+    setDescriptionTouched(false);
+    setTargetPeriodTouched(false);
+    setSubmitAttempted(false);
+    setSelectedCategory('Bricolage');
+    setPublicationMode('loan');
+    setEditingListingId(null);
+    router.push(isLoanPublication ? '/(tabs)/explore' : '/(tabs)/inbox');
   };
 
   return (
@@ -166,8 +276,20 @@ export default function PostScreen() {
             automaticallyAdjustKeyboardInsets
             contentInsetAdjustmentBehavior="always">
             <Card style={styles.card}>
-              <ThemedText type="title">Nouvelle publication</ThemedText>
+              <ThemedText type="title">{isEditing ? 'Modifier la publication' : 'Nouvelle publication'}</ThemedText>
               <ThemedText style={[styles.subtitle, { color: mutedText }]}>Choisis le type puis complète le formulaire.</ThemedText>
+
+              {prefillSourceLabel ? (
+                <View style={[styles.prefillBanner, { borderColor: `${tint}55`, backgroundColor: `${tint}12` }]}>
+                  <MaterialIcons name="auto-awesome" size={16} color={tint} />
+                  <View style={styles.prefillBannerTextWrap}>
+                    <ThemedText type="defaultSemiBold" style={{ color: tint }}>
+                      Champs préremplis
+                    </ThemedText>
+                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>{prefillSourceLabel}</ThemedText>
+                  </View>
+                </View>
+              ) : null}
 
               <View style={styles.formGroup}>
                 <ThemedText type="defaultSemiBold">Type de publication</ThemedText>
@@ -205,6 +327,51 @@ export default function PostScreen() {
                     </ThemedText>
                   </Pressable>
                 </View>
+              </View>
+
+              <View style={styles.formGroup}>
+                <ThemedText type="defaultSemiBold">Republier une annonce passée</ThemedText>
+                {PAST_PUBLICATIONS.length > 0 ? (
+                  <Button
+                    label={showPastPublications ? 'Masquer les annonces passées' : 'Afficher les annonces passées'}
+                    variant="secondary"
+                    onPress={() => setShowPastPublications((current) => !current)}
+                  />
+                ) : null}
+                {showPastPublications && PAST_PUBLICATIONS.length > 0 ? (
+                  <View style={styles.pastWrap}>
+                    {PAST_PUBLICATIONS.map((pastItem) => (
+                      <View key={pastItem.id} style={[styles.pastRow, { borderColor: border, backgroundColor: surface }]}>
+                        <View style={styles.pastTextWrap}>
+                          <ThemedText type="defaultSemiBold" numberOfLines={1}>{pastItem.title}</ThemedText>
+                          <ThemedText style={{ color: mutedText, fontSize: 12 }} numberOfLines={1}>
+                            {pastItem.archivedAtLabel}
+                          </ThemedText>
+                        </View>
+                        <View style={styles.pastActionsWrap}>
+                          <ThemedText style={{ color: mutedText, fontSize: 11 }}>
+                            {pastItem.publicationMode === 'loan' ? 'Prêt' : 'Recherche'}
+                          </ThemedText>
+                          <Button
+                            label="Republier"
+                            variant="secondary"
+                            style={styles.republishButton}
+                            onPress={() =>
+                              applyPublicationPreset({
+                                publicationMode: pastItem.publicationMode,
+                                title: pastItem.title,
+                                description: pastItem.description,
+                                category: pastItem.category,
+                                targetPeriod: pastItem.targetPeriod,
+                                requiresDeposit: pastItem.requiresDeposit,
+                              })
+                            }
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
 
               {isLoanPublication ? (
@@ -264,7 +431,11 @@ export default function PostScreen() {
                   onBlur={() => setTitleTouched(true)}
                   placeholder={isLoanPublication ? 'Ex: Perceuse Bosch' : 'Ex: Perceuse Bosch 18V'}
                   placeholderTextColor={mutedText}
-                  style={[styles.input, { color: text, borderColor: border, backgroundColor: surface }]}
+                  style={[
+                    styles.input,
+                    prefillSourceLabel ? { borderColor: `${tint}66`, backgroundColor: `${tint}10` } : null,
+                    { color: text, borderColor: prefillSourceLabel ? `${tint}66` : border, backgroundColor: prefillSourceLabel ? `${tint}10` : surface },
+                  ]}
                 />
                 {(titleTouched || submitAttempted) && titleError ? (
                   <ThemedText style={{ color: danger, fontSize: 12 }}>{titleError}</ThemedText>
@@ -286,7 +457,10 @@ export default function PostScreen() {
                       : 'Précise ton besoin, usage, budget éventuel, contraintes...'
                   }
                   placeholderTextColor={mutedText}
-                  style={[styles.textarea, { color: text, borderColor: border, backgroundColor: surface }]}
+                  style={[
+                    styles.textarea,
+                    { color: text, borderColor: prefillSourceLabel ? `${tint}66` : border, backgroundColor: prefillSourceLabel ? `${tint}10` : surface },
+                  ]}
                 />
                 {(descriptionTouched || submitAttempted) && descriptionError ? (
                   <ThemedText style={{ color: danger, fontSize: 12 }}>{descriptionError}</ThemedText>
@@ -302,7 +476,10 @@ export default function PostScreen() {
                     onBlur={() => setTargetPeriodTouched(true)}
                     placeholder="Ex: ce weekend, 3 jours max"
                     placeholderTextColor={mutedText}
-                    style={[styles.input, { color: text, borderColor: border, backgroundColor: surface }]}
+                    style={[
+                      styles.input,
+                      { color: text, borderColor: prefillSourceLabel ? `${tint}66` : border, backgroundColor: prefillSourceLabel ? `${tint}10` : surface },
+                    ]}
                   />
                   {(targetPeriodTouched || submitAttempted) && targetPeriodError ? (
                     <ThemedText style={{ color: danger, fontSize: 12 }}>{targetPeriodError}</ThemedText>
@@ -379,7 +556,13 @@ export default function PostScreen() {
               </View>
 
               <Button
-                label={isLoanPublication ? 'Publier le prêt' : 'Publier la recherche'}
+                label={
+                  isEditing
+                    ? 'Enregistrer les modifications'
+                    : isLoanPublication
+                      ? 'Publier le prêt'
+                      : 'Publier la recherche'
+                }
                 disabled={!canSubmit}
                 onPress={submitPost}
                 accessibilityLabel={isLoanPublication ? 'Publier ce prêt' : 'Publier cette recherche'}
@@ -424,6 +607,44 @@ const styles = StyleSheet.create({
   },
   formGroup: {
     gap: 6,
+  },
+  prefillBanner: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  prefillBannerTextWrap: {
+    flex: 1,
+    gap: 1,
+  },
+  pastWrap: {
+    gap: 8,
+  },
+  pastRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  pastTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  pastActionsWrap: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  republishButton: {
+    minHeight: 34,
+    paddingHorizontal: 10,
   },
   modeRow: {
     flexDirection: 'row',

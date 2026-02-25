@@ -9,8 +9,9 @@ import { ThemedView } from '@/components/themed-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { INBOX_LOANS, type LoanDirection } from '@/data/mock';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { INBOX_LOANS, type LoanDirection, useBackendDataVersion } from '@/lib/backend/data';
+import { notifyEvent } from '@/lib/notifications/events';
 import { isFeedbackSubmitted } from '@/stores/feedback-store';
 import { acceptExchange, getEffectiveLoanState, isExchangeRefused, refuseExchange } from '@/stores/proof/closure-store';
 import {
@@ -22,6 +23,7 @@ import {
 type ExchangeFilter = LoanDirection | 'completed';
 
 export default function InboxScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const [filter, setFilter] = useState<ExchangeFilter>('incoming');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -156,6 +158,41 @@ export default function InboxScreen() {
               const showOnlyEvaluateInCompleted = isCompletedTab && needsFeedback;
               const hideAllActionsInCompleted = isCompletedTab && isRefused;
 
+              const statusLabel = isRefused
+                ? 'Refusé'
+                : loanState === 'pending'
+                  ? 'En attente'
+                  : loanState === 'accepted'
+                    ? 'Accepté'
+                    : 'Terminé';
+
+              const roleLabel = loan.direction === 'incoming' ? 'Tu empruntes' : 'Tu prêtes';
+              const otherLabel = loan.direction === 'incoming' ? `Avec ${loan.otherUserName}` : `Pour ${loan.otherUserName}`;
+
+              const nextStepTitle = isRefused
+                ? 'Échange clôturé'
+                : canAcceptAsLender
+                  ? 'Action requise'
+                  : needsFeedback
+                    ? 'Action requise'
+                    : isAccepted
+                      ? 'Prochaine étape'
+                      : 'Statut';
+
+              const nextStepText = isRefused
+                ? 'Cette demande a été refusée. Aucun chat ou pass actif.'
+                : canAcceptAsLender
+                  ? 'Accepte ou refuse cette demande pour débloquer la suite.'
+                  : needsFeedback
+                    ? 'Envoie ton évaluation pour finaliser la confiance.'
+                    : isAccepted
+                      ? 'Ouvre le pass d’échange pour confirmer la remise et le retour.'
+                      : 'En attente de réponse du prêteur.';
+
+              const nextStepTone = isRefused ? danger : canAcceptAsLender || needsFeedback ? danger : tint;
+              const nextStepBackground = isRefused ? `${danger}10` : canAcceptAsLender || needsFeedback ? `${danger}0F` : `${tint}12`;
+              const nextStepBorder = isRefused ? `${danger}44` : canAcceptAsLender || needsFeedback ? `${danger}44` : `${tint}44`;
+
               const dueText = isRefused
                 ? 'Demande refusée · échange clôturé'
                 : isSuccessfulCompleted && feedbackSubmitted
@@ -165,6 +202,7 @@ export default function InboxScreen() {
                 : loan.state === 'pending' && loanState === 'accepted'
                   ? 'Prêt validé · pass disponible'
                   : loan.dueText;
+              const hideDueTextAboveNextStep = !isCompletedTab && /retour prévu/i.test(dueText);
 
               return (
               <Card
@@ -179,16 +217,31 @@ export default function InboxScreen() {
                     : null,
                 ]}>
                 <View style={styles.requestHeader}>
-                  <ThemedText type="defaultSemiBold">{loan.objectName}</ThemedText>
+                  <View style={styles.headerMainBlock}>
+                    <ThemedText type="defaultSemiBold">{loan.objectName}</ThemedText>
+                    <ThemedText style={{ color: mutedText, fontSize: 13 }}>{otherLabel}</ThemedText>
+                  </View>
                   <Badge
-                    label={isRefused ? 'Refusé' : loanState === 'pending' ? 'En attente' : loanState === 'accepted' ? 'Accepté' : 'Terminé'}
+                    label={statusLabel}
                     variant={isRefused ? 'danger' : (loanState === 'accepted' || isSuccessfulCompleted) ? 'primary' : 'neutral'}
                   />
                 </View>
-                <ThemedText style={{ color: mutedText }}>
-                  {loan.direction === 'incoming' ? 'Emprunté à ' : 'Prêté à '} {loan.otherUserName}
-                </ThemedText>
-                <ThemedText style={{ color: mutedText, fontSize: 13 }}>{dueText}</ThemedText>
+
+                <View style={styles.metaRow}>
+                  <Badge label={roleLabel} variant="neutral" />
+                </View>
+
+                {!hideDueTextAboveNextStep ? (
+                  <ThemedText style={{ color: mutedText, fontSize: 13 }}>{dueText}</ThemedText>
+                ) : null}
+
+                <View style={[styles.nextStepCard, { borderColor: nextStepBorder, backgroundColor: nextStepBackground }]}>
+                  <ThemedText type="defaultSemiBold" style={{ color: nextStepTone }}>
+                    {nextStepTitle}
+                  </ThemedText>
+                  <ThemedText style={{ color: mutedText, fontSize: 12 }}>{nextStepText}</ThemedText>
+                </View>
+
                 {isCompletedTab && isSuccessfulCompleted ? (
                   <>
                     {pickupAcceptedDateLabel ? (
@@ -222,16 +275,23 @@ export default function InboxScreen() {
                     </ThemedText>
                   </View>
                 ) : null}
+
                 {(canAcceptAsLender || canRefuseAsLender) && !isCompletedTab ? (
                   <View style={styles.pendingActionsRow}>
                     {canAcceptAsLender ? (
                       <Button
                         label="Accepter"
-                        variant="secondary"
+                        variant="primary"
                         style={styles.acceptAction}
                         accessibilityLabel={`Accepter la demande pour ${loan.objectName}`}
                         onPress={() => {
                           acceptExchange(loan.id);
+                          void notifyEvent({
+                            type: 'loan_request_accepted',
+                            loanId: loan.id,
+                            objectName: loan.objectName,
+                            otherUserName: loan.otherUserName,
+                          });
                           setRefreshKey((current) => current + 1);
                         }}
                       />
@@ -277,7 +337,7 @@ export default function InboxScreen() {
                 {showOnlyEvaluateInCompleted ? (
                   <Button
                     label="Évaluer maintenant"
-                    variant="secondary"
+                    variant="primary"
                     style={styles.secondaryActionButton}
                     textStyle={styles.secondaryActionText}
                     accessibilityLabel={`Évaluer l’échange pour ${loan.objectName}`}
@@ -360,8 +420,24 @@ const styles = StyleSheet.create({
   requestHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
+  },
+  headerMainBlock: {
+    flex: 1,
+    gap: 2,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  nextStepCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
   },
   primaryAction: {
     minHeight: 46,

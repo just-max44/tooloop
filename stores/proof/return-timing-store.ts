@@ -1,3 +1,6 @@
+import { INBOX_LOANS } from '@/lib/backend/data';
+import { scheduleReturnReminderNotification } from '@/lib/notifications/service';
+
 type PickupAgreement = {
   returnDateISO: string | null;
   borrowerAccepted: boolean;
@@ -52,6 +55,18 @@ export function setPickupReturnDateISO(loanId: string, returnDateISO: string) {
     borrowerAccepted: didDateChange ? false : previous.borrowerAccepted,
     pickupAcceptedAtISO: didDateChange ? null : previous.pickupAcceptedAtISO,
   };
+
+  const relatedLoan = INBOX_LOANS.find((item) => item.id === loanId);
+  if (!relatedLoan) {
+    return;
+  }
+
+  void scheduleReturnReminderNotification({
+    loanId,
+    objectName: relatedLoan.objectName,
+    otherUserName: relatedLoan.otherUserName,
+    returnDateISO,
+  });
 }
 
 export function isBorrowerPickupAccepted(loanId: string) {

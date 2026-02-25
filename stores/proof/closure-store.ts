@@ -1,4 +1,4 @@
-import type { LoanState } from '@/data/mock';
+import type { LoanState } from '@/lib/backend/data';
 
 const closedExchangeByLoanId: Record<string, boolean> = {};
 const acceptedExchangeByLoanId: Record<string, boolean> = {};

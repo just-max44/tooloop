@@ -1,9 +1,10 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -12,8 +13,16 @@ import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius } from '@/constants/theme';
-import { getExchangePassByLoanId, INBOX_LOANS } from '@/data/mock';
+import { useProofBackToInbox } from '@/hooks/use-proof-back-to-inbox';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getExchangePassByLoanId, INBOX_LOANS, PROFILE_USER, useBackendDataVersion } from '@/lib/backend/data';
+import { showAppNotice } from '@/stores/app-notice-store';
+import { upsertTrustExchangeComment } from '@/stores/feedback-store';
+import {
+    approveStoryContribution,
+    getPendingStoryContributionsByLoanId,
+    rejectStoryContribution,
+} from '@/stores/object-story-store';
 import { getStepQrPayload, getStepVerifierCode, isExchangeQrPayload } from '@/stores/proof/pass-auth';
 import {
     getReturnCondition,
@@ -23,12 +32,13 @@ import {
 } from '@/stores/proof/return-timing-store';
 
 type ValidationMethod = 'qr' | 'code';
-type SimulatedRole = 'lender' | 'borrower';
 type ReturnCondition = 'conforme' | 'partiel' | 'abime';
 
 export default function ReturnProofScreen() {
+  useBackendDataVersion();
   const router = useRouter();
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
+  useProofBackToInbox();
   const insets = useSafeAreaInsets();
 
   const border = useThemeColor({}, 'border');
@@ -44,23 +54,25 @@ export default function ReturnProofScreen() {
   const [methodValidated, setMethodValidated] = useState(false);
   const [partnerCode, setPartnerCode] = useState('');
   const [returnChecked, setReturnChecked] = useState(false);
+  const [lenderComment, setLenderComment] = useState('');
+  const [lenderCommentSaved, setLenderCommentSaved] = useState(false);
   const [methodSuccessMessage, setMethodSuccessMessage] = useState<string | null>(null);
+  const [continueHint, setContinueHint] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const lastScanRef = useRef<{ data: string; at: number }>({ data: '', at: 0 });
 
   const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [loanId]);
   const pass = useMemo(() => (loanId ? getExchangePassByLoanId(loanId) : undefined), [loanId]);
-  const initialRole: SimulatedRole = loan?.direction === 'outgoing' ? 'lender' : 'borrower';
-  const [simulatedRole, setSimulatedRole] = useState<SimulatedRole>(initialRole);
-  const isBorrower = simulatedRole === 'borrower';
-  const isLender = simulatedRole === 'lender';
+  const isBorrower = loan?.direction === 'incoming';
+  const isLender = loan?.direction === 'outgoing';
 
   const [returnCondition, setReturnConditionState] = useState<ReturnCondition | null>(() =>
     loanId ? getReturnCondition(loanId) : null
   );
 
   const borrowerAccepted = loanId ? isBorrowerReturnAccepted(loanId) : false;
+  const pendingStoryContributions = loanId ? getPendingStoryContributionsByLoanId(loanId) : [];
   const stepCode = useMemo(() => (pass ? getStepVerifierCode(pass.codeSeed, 'return') : ''), [pass]);
   const qrPayload = useMemo(() => (pass ? JSON.stringify(getStepQrPayload(pass, 'return')) : ''), [pass]);
 
@@ -70,11 +82,11 @@ export default function ReturnProofScreen() {
       if (loanId) {
         setReturnConditionState(getReturnCondition(loanId));
       }
-      setSimulatedRole(loan?.direction === 'outgoing' ? 'lender' : 'borrower');
       setMethodValidated(false);
       setMethodSuccessMessage(null);
       setReturnChecked(false);
-    }, [loan?.direction, loanId])
+      setContinueHint(null);
+    }, [loanId])
   );
 
   void refreshKey;
@@ -93,6 +105,25 @@ export default function ReturnProofScreen() {
     );
   }
 
+  if (borrowerAccepted) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>
+        <ThemedView style={styles.container}>
+          <Card style={styles.card}>
+            <ThemedText type="subtitle">Retour déjà validé</ThemedText>
+            <ThemedText style={{ color: mutedText }}>
+              Cette étape est verrouillée. Le formulaire de retour n’est plus accessible.
+            </ThemedText>
+            <Button
+              label="Retour au pass d’échange"
+              onPress={() => router.replace({ pathname: '/proof/[loanId]', params: { loanId } })}
+            />
+          </Card>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
+
   const hasReturnCondition = !!returnCondition;
 
   const ensureReturnConditionExists = () => {
@@ -100,11 +131,11 @@ export default function ReturnProofScreen() {
       return true;
     }
 
-    Alert.alert(
-      'État requis',
+    showAppNotice(
       isLender
-        ? 'Renseigne l’état du retour (conforme, partiellement conforme ou abîmé).'
-        : 'Le prêteur doit d’abord renseigner l’état du retour.'
+        ? 'État requis: renseigne l’état du retour (conforme, partiel ou abîmé).'
+        : 'Le prêteur doit d’abord renseigner l’état du retour.',
+      'warning'
     );
     return false;
   };
@@ -128,14 +159,14 @@ export default function ReturnProofScreen() {
     }
 
     if (Platform.OS === 'web') {
-      Alert.alert('Scan indisponible', 'Le scan caméra est disponible sur iOS et Android.');
+      showAppNotice('Scan indisponible: le scan caméra est disponible sur iOS et Android.', 'warning');
       return;
     }
 
     if (!cameraPermission?.granted) {
       const permissionResponse = await requestCameraPermission();
       if (!permissionResponse.granted) {
-        Alert.alert('Autorisation requise', 'Active l’accès caméra pour scanner le QR partenaire.');
+        showAppNotice('Autorisation caméra requise pour scanner le QR partenaire.', 'warning');
         return;
       }
     }
@@ -167,13 +198,13 @@ export default function ReturnProofScreen() {
     try {
       parsedPayload = JSON.parse(data);
     } catch {
-      Alert.alert('QR invalide', 'Le QR scanné n’est pas un pass Tooloop valide.');
+      showAppNotice('QR invalide: le QR scanné n’est pas un pass Tooloop valide.', 'error');
       setTimeout(() => setScannerLocked(false), 350);
       return;
     }
 
     if (!isExchangeQrPayload(parsedPayload)) {
-      Alert.alert('QR invalide', 'Format de pass non reconnu.');
+      showAppNotice('QR invalide: format de pass non reconnu.', 'error');
       setTimeout(() => setScannerLocked(false), 350);
       return;
     }
@@ -183,7 +214,7 @@ export default function ReturnProofScreen() {
       parsedPayload.step !== 'return' ||
       parsedPayload.verifierCode !== stepCode
     ) {
-      Alert.alert('QR non correspondant', 'Ce QR ne correspond pas à la validation du retour.');
+      showAppNotice('QR non correspondant: ce QR ne correspond pas à la validation du retour.', 'error');
       setTimeout(() => setScannerLocked(false), 350);
       return;
     }
@@ -204,14 +235,14 @@ export default function ReturnProofScreen() {
 
     const normalized = partnerCode.trim().toUpperCase();
     if (!normalized) {
-      Alert.alert('Code requis', 'Saisis le code partenaire pour continuer.');
+      showAppNotice('Code requis: saisis le code partenaire pour continuer.', 'warning');
       return;
     }
 
     if (normalized !== stepCode) {
       setMethodValidated(false);
       setMethodSuccessMessage(null);
-      Alert.alert('Code invalide', 'Le code saisi ne correspond pas à cette étape de retour.');
+      showAppNotice('Code invalide: le code saisi ne correspond pas à cette étape de retour.', 'error');
       return;
     }
 
@@ -229,11 +260,32 @@ export default function ReturnProofScreen() {
     }
 
     if (!methodValidated || !returnChecked) {
-      Alert.alert('Étapes manquantes', 'Valide la méthode choisie puis confirme le retour de l’objet.');
+      setContinueHint('Valide la méthode choisie puis confirme le retour de l’objet pour continuer.');
       return;
     }
 
+    setContinueHint(null);
     router.push({ pathname: '/proof/return-review/[loanId]', params: { loanId, as: 'borrower' } });
+  };
+
+  const saveLenderComment = () => {
+    const normalized = lenderComment.trim();
+    if (!normalized) {
+      showAppNotice('Commentaire requis: ajoute un commentaire avant de l’enregistrer.', 'warning');
+      return;
+    }
+
+    upsertTrustExchangeComment({
+      sourceKey: `lender-return-${loanId}`,
+      authorName: PROFILE_USER.firstName,
+      targetUserName: loan.otherUserName,
+      loanObjectName: loan.objectName,
+      comment: normalized,
+      timeLabel: 'Maintenant',
+    });
+
+    setLenderCommentSaved(true);
+    showAppNotice('Commentaire enregistré pour le profil confiance.', 'success');
   };
 
   const conditionLabel = returnCondition ? getReturnConditionLabel(loanId) : 'État non renseigné';
@@ -257,45 +309,6 @@ export default function ReturnProofScreen() {
               <ThemedText style={{ color: mutedText }}>
                 {loan.objectName} avec {loan.otherUserName}
               </ThemedText>
-              <View style={styles.roleSwitchRow}>
-                <Pressable
-                  onPress={() => {
-                    setSimulatedRole('lender');
-                    setMethodValidated(false);
-                    setMethodSuccessMessage(null);
-                    setReturnChecked(false);
-                  }}
-                  style={[
-                    styles.roleSwitchButton,
-                    {
-                      borderColor: simulatedRole === 'lender' ? tint : border,
-                      backgroundColor: simulatedRole === 'lender' ? `${tint}18` : surface,
-                    },
-                  ]}>
-                  <ThemedText type="defaultSemiBold" style={{ color: simulatedRole === 'lender' ? tint : text }}>
-                    Mode test: Prêteur
-                  </ThemedText>
-                </Pressable>
-                <Pressable
-                  onPress={() => {
-                    setSimulatedRole('borrower');
-                    setMethodValidated(false);
-                    setMethodSuccessMessage(null);
-                    setReturnChecked(false);
-                  }}
-                  style={[
-                    styles.roleSwitchButton,
-                    {
-                      borderColor: simulatedRole === 'borrower' ? tint : border,
-                      backgroundColor: simulatedRole === 'borrower' ? `${tint}18` : surface,
-                    },
-                  ]}>
-                  <ThemedText type="defaultSemiBold" style={{ color: simulatedRole === 'borrower' ? tint : text }}>
-                    Mode test: Emprunteur
-                  </ThemedText>
-                </Pressable>
-              </View>
-
               <View style={styles.conditionRow}>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>État de l’objet au retour</ThemedText>
                 {isLender ? (
@@ -337,7 +350,62 @@ export default function ReturnProofScreen() {
                   ? 'Choisis une méthode et vérifie les informations avant validation finale.'
                   : 'Partage ensuite le QR ou le code à l’emprunteur pour sa validation.'}
               </ThemedText>
+              {isBorrower && methodValidated ? (
+                <View style={[styles.successInline, { borderColor: `${tint}66`, backgroundColor: `${tint}16` }]}>
+                  <MaterialIcons name="check-circle" size={16} color={tint} />
+                  <ThemedText style={{ color: text, fontSize: 13 }}>
+                    Méthode validée. Coche “J’ai bien rendu l’objet” pour continuer.
+                  </ThemedText>
+                </View>
+              ) : null}
             </Card>
+
+            {isLender ? (
+              <Card style={styles.card}>
+                <ThemedText type="subtitle">Mini-story en attente de validation</ThemedText>
+                {pendingStoryContributions.length === 0 ? (
+                  <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                    Aucune contribution photo en attente pour cet échange.
+                  </ThemedText>
+                ) : (
+                  pendingStoryContributions.map((contribution) => (
+                    <View key={contribution.id} style={[styles.storyReviewCard, { borderColor: border, backgroundColor: surface }]}>
+                      <View style={[styles.storyReviewPhotoWrap, { borderColor: border }]}>
+                        <Image source={{ uri: contribution.photoUri }} style={styles.storyReviewPhoto} contentFit="cover" />
+                      </View>
+                      <View style={styles.storyReviewContentWrap}>
+                        <ThemedText type="defaultSemiBold">{contribution.authorName}</ThemedText>
+                        {contribution.comment ? (
+                          <ThemedText style={{ color: mutedText, fontSize: 12 }}>{contribution.comment}</ThemedText>
+                        ) : (
+                          <ThemedText style={{ color: mutedText, fontSize: 12 }}>Pas de commentaire</ThemedText>
+                        )}
+                        <View style={styles.storyReviewActionsRow}>
+                          <Button
+                            label="Valider"
+                            variant="secondary"
+                            style={styles.storyActionButton}
+                            onPress={() => {
+                              approveStoryContribution(contribution.id);
+                              setRefreshKey((current) => current + 1);
+                            }}
+                          />
+                          <Button
+                            label="Refuser"
+                            variant="secondary"
+                            style={styles.storyActionButton}
+                            onPress={() => {
+                              rejectStoryContribution(contribution.id);
+                              setRefreshKey((current) => current + 1);
+                            }}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </Card>
+            ) : null}
 
             <Card style={styles.card}>
               <View style={styles.methodRow}>
@@ -476,7 +544,10 @@ export default function ReturnProofScreen() {
               <Card style={styles.card}>
                 <Pressable
                   style={[styles.checkItem, { borderColor: border, backgroundColor: surface }]}
-                  onPress={() => setReturnChecked((value) => !value)}
+                  onPress={() => {
+                    setReturnChecked((value) => !value);
+                    setContinueHint(null);
+                  }}
                   accessibilityRole="checkbox"
                   accessibilityLabel="Retour objet effectué"
                   accessibilityState={{ checked: returnChecked }}>
@@ -491,10 +562,17 @@ export default function ReturnProofScreen() {
                 </Pressable>
 
                 <Button
-                  label="Voir le récapitulatif du retour"
+                  label="Continuer vers le récapitulatif"
                   onPress={continueToRecap}
-                  disabled={!methodValidated || !returnChecked || !hasReturnCondition}
+                  disabled={!hasReturnCondition}
                 />
+
+                {continueHint ? (
+                  <View style={[styles.warningInline, { borderColor: border, backgroundColor: surface }]}>
+                    <MaterialIcons name="info-outline" size={16} color={mutedText} />
+                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>{continueHint}</ThemedText>
+                  </View>
+                ) : null}
               </Card>
             ) : (
               <Card style={styles.card}>
@@ -509,6 +587,29 @@ export default function ReturnProofScreen() {
                   variant="secondary"
                   disabled
                 />
+
+                <View style={styles.lenderCommentWrap}>
+                  <ThemedText type="defaultSemiBold">Commentaire du prêteur</ThemedText>
+                  <TextInput
+                    value={lenderComment}
+                    onChangeText={(nextValue) => {
+                      setLenderComment(nextValue);
+                      if (lenderCommentSaved) {
+                        setLenderCommentSaved(false);
+                      }
+                    }}
+                    placeholder="Ex: retour dans les temps, objet rendu propre"
+                    placeholderTextColor={mutedText}
+                    multiline
+                    style={[styles.lenderCommentInput, { borderColor: border, color: text, backgroundColor: surface }]}
+                  />
+                  <Button label="Enregistrer le commentaire" variant="secondary" onPress={saveLenderComment} />
+                  {lenderCommentSaved ? (
+                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                      Commentaire ajouté à la confiance locale.
+                    </ThemedText>
+                  ) : null}
+                </View>
               </Card>
             )}
           </ScrollView>
@@ -538,19 +639,6 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: 10,
-  },
-  roleSwitchRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  roleSwitchButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
   },
   conditionRow: {
     gap: 8,
@@ -630,6 +718,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  warningInline: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    minHeight: 40,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   checkItem: {
     borderWidth: 1,
     borderRadius: Radius.md,
@@ -641,5 +739,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  storyReviewCard: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: 8,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  storyReviewPhotoWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  storyReviewPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  storyReviewContentWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  storyReviewActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  storyActionButton: {
+    flex: 1,
+    minHeight: 36,
+  },
+  lenderCommentWrap: {
+    gap: 8,
+    marginTop: 4,
+  },
+  lenderCommentInput: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    minHeight: 92,
+    textAlignVertical: 'top',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
 });
