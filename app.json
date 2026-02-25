@@ -3,9 +3,6 @@
     "name": "tooloop",
     "slug": "tooloop",
     "version": "1.0.0",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -26,7 +23,6 @@
     },
     "android": {
       "package": "com.tooloop.app",
-      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -86,6 +82,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "44cb46a0-9453-4c9d-bc7d-d4e521fc81dc"
+      }
     }
   }
 }
