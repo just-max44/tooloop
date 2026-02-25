@@ -18,6 +18,12 @@ function json(status: number, payload: Record<string, unknown>) {
   });
 }
 
+function resolveClientIp(request: Request) {
+  const forwardedFor = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  const realIp = request.headers.get('x-real-ip')?.trim();
+  return forwardedFor || realIp || 'unknown-ip';
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -63,6 +69,22 @@ Deno.serve(async (request) => {
       persistSession: false,
     },
   });
+
+  const clientIp = resolveClientIp(request);
+  const rateKey = `delete-account:${user.id}:${clientIp}`;
+  const { data: allowed, error: rateLimitError } = await adminClient.rpc('check_rate_limit', {
+    p_rate_key: rateKey,
+    p_max_hits: 3,
+    p_window_seconds: 3600,
+  });
+
+  if (rateLimitError) {
+    return json(500, { error: 'Rate limit check failed' });
+  }
+
+  if (!allowed) {
+    return json(429, { error: 'Too many requests' });
+  }
 
   const { error: profileDeleteError } = await adminClient.from('users').delete().eq('id', user.id);
   if (profileDeleteError) {

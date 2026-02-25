@@ -65,14 +65,24 @@ Dans `.env` (optionnel):
 EXPO_PUBLIC_DELETE_ACCOUNT_FUNCTION_NAME=delete-account
 ```
 
-## 7) URLs légales publiques
+## 7) Sécurité anti-abus (obligatoire prod)
 
-Configurer des URLs publiques valides avant soumission:
+1. Appliquer les migrations SQL Supabase (incluant hardening RLS + rate-limit):
 
 ```bash
-EXPO_PUBLIC_PRIVACY_POLICY_URL=https://ton-domaine/privacy
-EXPO_PUBLIC_TERMS_URL=https://ton-domaine/terms
+supabase db push
 ```
+
+2. Vérifier que les tables `public` sont bien sous RLS et que des policies existent.
+3. Dans Supabase Dashboard > Auth > Rate Limits, activer des limites strictes pour login/signup/reset.
+4. Dans Supabase Dashboard > Auth > Bot Detection, activer CAPTCHA pour signup/login.
+5. Redéployer la function delete-account après migration:
+
+```bash
+supabase functions deploy delete-account
+```
+
+Checklist détaillée: `docs/SUPABASE_SECURITY_CHECKLIST.md`
 
 ## 8) Client backend côté app
 
