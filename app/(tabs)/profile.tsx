@@ -1,5 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -17,8 +18,10 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import {
     changePasswordWithCurrentPassword,
     deleteCurrentAccount,
+    getPrivateLocationPreference,
     sendPasswordResetEmail,
     signOutSession,
+    updatePrivateLocationPreference,
     useAuthSession,
 } from '@/lib/backend/auth';
 import { PROFILE_STATS, TRUST_PROFILE, getSuccessTagsStatus, useBackendDataVersion } from '@/lib/backend/data';
@@ -63,6 +66,10 @@ export default function ProfileScreen() {
     return_due_tomorrow: true,
   });
   const [isNotificationsLoading, setIsNotificationsLoading] = useState(true);
+  const [privateCity, setPrivateCity] = useState('');
+  const [privatePostalCode, setPrivatePostalCode] = useState('');
+  const [isPrivateLocationLoading, setIsPrivateLocationLoading] = useState(false);
+  const [isPrivateLocationUpdatingFromGps, setIsPrivateLocationUpdatingFromGps] = useState(false);
   const hasPasswordDraft = newPassword.length > 0 || confirmNewPassword.length > 0;
   const passwordMatchState =
     !hasPasswordDraft ? null : newPassword === confirmNewPassword ? 'match' : 'mismatch';
@@ -78,6 +85,8 @@ export default function ProfileScreen() {
     fallbackFullName;
   const profileEmail = session?.user?.email ?? null;
   const metadataAvatar = typeof metadata?.avatar_url === 'string' ? metadata.avatar_url : null;
+  const metadataPrivateCity = typeof metadata?.private_city === 'string' ? metadata.private_city : '';
+  const metadataPrivatePostalCode = typeof metadata?.private_postal_code === 'string' ? metadata.private_postal_code : '';
   const avatarUri = metadataAvatar || profile.photoUri;
   const loanListings = listings.filter((item) => item.publicationMode === 'loan');
   const requestListings = listings.filter((item) => item.publicationMode === 'request');
@@ -103,6 +112,29 @@ export default function ProfileScreen() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    setPrivateCity(metadataPrivateCity);
+    setPrivatePostalCode(metadataPrivatePostalCode);
+
+    if (!metadataPrivateCity && !metadataPrivatePostalCode) {
+      getPrivateLocationPreference()
+        .then((preference) => {
+          if (!isMounted || !preference) {
+            return;
+          }
+          setPrivateCity(preference.city);
+          setPrivatePostalCode(preference.postalCode);
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [metadataPrivateCity, metadataPrivatePostalCode]);
 
   const openListing = (listingId: string) => {
     const listing = listings.find((item) => item.id === listingId);
@@ -304,6 +336,71 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSavePrivateLocation = async () => {
+    const city = privateCity.trim();
+    const postalCode = privatePostalCode.trim();
+
+    if (!city || !postalCode) {
+      showAppNotice('Renseigne une ville et un code postal.', 'warning');
+      return;
+    }
+
+    setIsPrivateLocationLoading(true);
+    try {
+      await updatePrivateLocationPreference({ city, postalCode });
+      setPrivateCity(city);
+      setPrivatePostalCode(postalCode);
+      showAppNotice('Zone privée enregistrée.', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Impossible d’enregistrer la zone privée.';
+      showAppNotice(message, 'error');
+    } finally {
+      setIsPrivateLocationLoading(false);
+    }
+  };
+
+  const handleUpdatePrivateLocationFromCurrentPosition = async () => {
+    setIsPrivateLocationUpdatingFromGps(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        showAppNotice('Active la localisation pour mettre à jour automatiquement ta zone.', 'warning');
+        return;
+      }
+
+      if (Location.enableNetworkProviderAsync) {
+        await Location.enableNetworkProviderAsync().catch(() => {});
+      }
+
+      const currentPosition = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const geocoded = await Location.reverseGeocodeAsync({
+        latitude: currentPosition.coords.latitude,
+        longitude: currentPosition.coords.longitude,
+      });
+
+      const place = geocoded[0];
+      const city = (place?.city ?? place?.subregion ?? place?.region ?? '').trim();
+      const postalCode = (place?.postalCode ?? '').trim();
+
+      if (!city || !postalCode) {
+        showAppNotice('Position détectée mais ville/CP non disponibles. Saisis-les manuellement.', 'warning');
+        return;
+      }
+
+      setPrivateCity(city);
+      setPrivatePostalCode(postalCode);
+      await updatePrivateLocationPreference({ city, postalCode });
+      showAppNotice('Zone privée mise à jour depuis ta position actuelle.', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Mise à jour de la zone privée impossible.';
+      showAppNotice(message, 'error');
+    } finally {
+      setIsPrivateLocationUpdatingFromGps(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>
       <ThemedView style={styles.container}>
@@ -461,6 +558,43 @@ export default function ProfileScreen() {
 
           <Card style={styles.card}>
             <ThemedText type="subtitle">Compte</ThemedText>
+            <View style={[styles.privateLocationCard, { borderColor: border, backgroundColor: surface }]}>
+              <ThemedText type="defaultSemiBold">Zone privée par défaut</ThemedText>
+              <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                Utilisée si la géolocalisation n’est pas active au moment de publier.
+              </ThemedText>
+              <View style={styles.privateLocationInputsRow}>
+                <TextInput
+                  value={privatePostalCode}
+                  onChangeText={setPrivatePostalCode}
+                  placeholder="Code postal"
+                  placeholderTextColor={mutedText}
+                  keyboardType="number-pad"
+                  style={[styles.privateLocationInput, { borderColor: border, backgroundColor: background }]}
+                />
+                <TextInput
+                  value={privateCity}
+                  onChangeText={setPrivateCity}
+                  placeholder="Ville"
+                  placeholderTextColor={mutedText}
+                  style={[styles.privateLocationInput, { borderColor: border, backgroundColor: background }]}
+                />
+              </View>
+              <View style={styles.privateLocationActions}>
+                <Button
+                  label="Enregistrer"
+                  variant="secondary"
+                  loading={isPrivateLocationLoading}
+                  onPress={handleSavePrivateLocation}
+                />
+                <Button
+                  label="Mettre à jour depuis ma position"
+                  variant="secondary"
+                  loading={isPrivateLocationUpdatingFromGps}
+                  onPress={handleUpdatePrivateLocationFromCurrentPosition}
+                />
+              </View>
+            </View>
             <View style={[styles.notificationRow, { borderColor: border, backgroundColor: surface }]}>
               <View style={styles.notificationTextWrap}>
                 <ThemedText type="defaultSemiBold">Notifications</ThemedText>
@@ -762,6 +896,28 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  privateLocationCard: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  privateLocationInputsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  privateLocationInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    fontSize: 14,
+  },
+  privateLocationActions: {
+    gap: 8,
   },
   notificationRow: {
     borderWidth: 1,

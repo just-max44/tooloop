@@ -12,6 +12,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getPrivateLocationPreference, updatePrivateLocationPreference } from '@/lib/backend/auth';
 import { CATEGORIES, DISCOVER_OBJECTS, PAST_PUBLICATIONS, useBackendDataVersion } from '@/lib/backend/data';
 import { showAppNotice } from '@/stores/app-notice-store';
 import { addListing, getListingById, updateListing } from '@/stores/listings-store';
@@ -48,6 +49,9 @@ export default function PostScreen() {
   const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   const [isLocationServiceEnabled, setIsLocationServiceEnabled] = useState<boolean | null>(null);
   const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [privateCity, setPrivateCity] = useState('');
+  const [privatePostalCode, setPrivatePostalCode] = useState('');
+  const [isUpdatingLocationFromDevice, setIsUpdatingLocationFromDevice] = useState(false);
 
   const text = useThemeColor({}, 'text');
   const background = useThemeColor({}, 'background');
@@ -59,6 +63,8 @@ export default function PostScreen() {
 
   const isLoanPublication = publicationMode === 'loan';
   const isLocationReady = locationPermission === 'granted' && isLocationServiceEnabled === true;
+  const hasPrivateLocationFallback = privateCity.trim().length > 0 && privatePostalCode.trim().length > 0;
+  const canPublishWithLocation = isLocationReady || hasPrivateLocationFallback;
 
   const syncLocationState = async () => {
     const permission = await Location.getForegroundPermissionsAsync();
@@ -194,6 +200,24 @@ export default function PostScreen() {
     });
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    getPrivateLocationPreference()
+      .then((preference) => {
+        if (!isMounted || !preference) {
+          return;
+        }
+        setPrivateCity(preference.city);
+        setPrivatePostalCode(preference.postalCode);
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const canSubmit = useMemo(
     () =>
       title.trim().length > 0 &&
@@ -216,11 +240,11 @@ export default function PostScreen() {
     if (!isLoanPublication && targetPeriod.trim().length === 0) {
       missing.push('période');
     }
-    if (!isLocationReady) {
+    if (!canPublishWithLocation) {
       missing.push('position activée');
     }
     return missing;
-  }, [description, isLoanPublication, isLocationReady, photoUri, targetPeriod, title]);
+  }, [canPublishWithLocation, description, isLoanPublication, photoUri, targetPeriod, title]);
 
   const titleError = title.trim().length === 0 ? (isLoanPublication ? 'Le nom de l’objet est requis.' : 'L’objet recherché est requis.') : null;
   const descriptionError = description.trim().length === 0 ? 'La description est requise.' : null;
@@ -288,7 +312,7 @@ export default function PostScreen() {
       return;
     }
 
-    if (!isLocationReady) {
+    if (!canPublishWithLocation) {
       await requestLocationPermission();
       showAppNotice(
         locationPermission === 'denied'
@@ -328,6 +352,50 @@ export default function PostScreen() {
     setPublicationMode('loan');
     setEditingListingId(null);
     router.push(isLoanPublication ? '/(tabs)/explore' : '/(tabs)/inbox');
+  };
+
+  const updatePrivateLocationFromCurrentPosition = async () => {
+    setIsUpdatingLocationFromDevice(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        showAppNotice('Active la localisation pour mettre à jour ta zone de publication.', 'warning');
+        return;
+      }
+
+      if (Location.enableNetworkProviderAsync) {
+        await Location.enableNetworkProviderAsync().catch(() => {});
+      }
+
+      const currentPosition = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const geocoded = await Location.reverseGeocodeAsync({
+        latitude: currentPosition.coords.latitude,
+        longitude: currentPosition.coords.longitude,
+      });
+
+      const place = geocoded[0];
+      const city = (place?.city ?? place?.subregion ?? place?.region ?? '').trim();
+      const postalCode = (place?.postalCode ?? '').trim();
+
+      if (!city || !postalCode) {
+        showAppNotice('Position détectée mais ville/CP non disponibles. Mets à jour ton profil manuellement.', 'warning');
+        return;
+      }
+
+      setPrivateCity(city);
+      setPrivatePostalCode(postalCode);
+      setLocationPermission('granted');
+      setIsLocationServiceEnabled(true);
+      await updatePrivateLocationPreference({ city, postalCode });
+      showAppNotice('Position de publication mise à jour depuis ta position actuelle.', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Mise à jour de position impossible.';
+      showAppNotice(message, 'error');
+    } finally {
+      setIsUpdatingLocationFromDevice(false);
+    }
   };
 
   return (
@@ -404,11 +472,17 @@ export default function PostScreen() {
                   <MaterialIcons name="my-location" size={16} color={tint} />
                   <View style={styles.locationTextWrap}>
                     <ThemedText type="defaultSemiBold" style={{ fontSize: 13 }}>
-                      {isLocationReady ? 'Position active' : 'Position requise pour publier'}
+                      {isLocationReady
+                        ? 'Position active'
+                        : hasPrivateLocationFallback
+                          ? 'Zone privée utilisée pour publier'
+                          : 'Position requise pour publier'}
                     </ThemedText>
                     <ThemedText style={{ color: mutedText, fontSize: 12 }}>
                       {isLocationReady
                         ? 'Tes annonces seront publiées avec une zone locale fiable.'
+                        : hasPrivateLocationFallback
+                          ? `Fallback profil: ${privatePostalCode} ${privateCity}. Tu peux la mettre à jour si tu es en déplacement.`
                         : locationPermission === 'denied'
                           ? 'Autorisation refusée: ouvre les réglages pour l’activer.'
                           : 'Active la localisation pour pouvoir publier.'}
@@ -429,6 +503,12 @@ export default function PostScreen() {
                     disabled={isRequestingLocation}
                   />
                 ) : null}
+                <Button
+                  label={isUpdatingLocationFromDevice ? 'Mise à jour en cours...' : 'Mettre à jour depuis ma position actuelle'}
+                  variant="secondary"
+                  onPress={updatePrivateLocationFromCurrentPosition}
+                  disabled={isUpdatingLocationFromDevice}
+                />
               </View>
 
               <View style={styles.formGroup}>
@@ -665,11 +745,11 @@ export default function PostScreen() {
                       ? 'Publier le prêt'
                       : 'Publier la recherche'
                 }
-                disabled={!canSubmit}
+                disabled={!canSubmit || !canPublishWithLocation}
                 onPress={submitPost}
                 accessibilityLabel={isLoanPublication ? 'Publier ce prêt' : 'Publier cette recherche'}
               />
-              {!canSubmit ? (
+              {!canSubmit || !canPublishWithLocation ? (
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>
                   Complète: {missingRequirements.join(', ')}.
                 </ThemedText>

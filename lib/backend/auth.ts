@@ -42,6 +42,15 @@ function getDeleteAccountFunctionName() {
   return process.env.EXPO_PUBLIC_DELETE_ACCOUNT_FUNCTION_NAME?.trim() || 'delete-account';
 }
 
+export type PrivateLocationPreference = {
+  city: string;
+  postalCode: string;
+};
+
+function normalizePrivateLocationValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export function useAuthSession() {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -257,4 +266,68 @@ export async function deleteCurrentAccount() {
   }
 
   await client.auth.signOut().catch(() => {});
+}
+
+export async function getPrivateLocationPreference() {
+  const client = getSupabaseClient();
+  const {
+    data: { user },
+    error,
+  } = await client.auth.getUser();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  const metadata = user.user_metadata as Record<string, unknown> | undefined;
+  const city = normalizePrivateLocationValue(metadata?.private_city);
+  const postalCode = normalizePrivateLocationValue(metadata?.private_postal_code);
+
+  if (!city && !postalCode) {
+    return null;
+  }
+
+  return { city, postalCode } satisfies PrivateLocationPreference;
+}
+
+export async function updatePrivateLocationPreference(input: PrivateLocationPreference) {
+  const city = input.city.trim();
+  const postalCode = input.postalCode.trim();
+
+  if (!city || !postalCode) {
+    throw new Error('Ville et code postal requis.');
+  }
+
+  const client = getSupabaseClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await client.auth.getUser();
+
+  if (userError) {
+    throw userError;
+  }
+
+  if (!user) {
+    throw new Error('Session utilisateur introuvable.');
+  }
+
+  const metadata = (user.user_metadata as Record<string, unknown> | undefined) ?? {};
+
+  const { error: updateError } = await client.auth.updateUser({
+    data: {
+      ...metadata,
+      private_city: city,
+      private_postal_code: postalCode,
+      private_location_updated_at: new Date().toISOString(),
+    },
+  });
+
+  if (updateError) {
+    throw updateError;
+  }
 }
