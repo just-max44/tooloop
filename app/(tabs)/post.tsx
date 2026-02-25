@@ -1,9 +1,10 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -44,6 +45,9 @@ export default function PostScreen() {
   const [prefillSourceLabel, setPrefillSourceLabel] = useState<string | null>(null);
   const [showPastPublications, setShowPastPublications] = useState(false);
   const [editingListingId, setEditingListingId] = useState<string | null>(null);
+  const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const [isLocationServiceEnabled, setIsLocationServiceEnabled] = useState<boolean | null>(null);
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
 
   const text = useThemeColor({}, 'text');
   const background = useThemeColor({}, 'background');
@@ -54,6 +58,49 @@ export default function PostScreen() {
   const danger = useThemeColor({}, 'danger');
 
   const isLoanPublication = publicationMode === 'loan';
+  const isLocationReady = locationPermission === 'granted' && isLocationServiceEnabled === true;
+
+  const syncLocationState = async () => {
+    const permission = await Location.getForegroundPermissionsAsync();
+    const granted = permission.status === 'granted';
+    setLocationPermission(granted ? 'granted' : 'denied');
+
+    if (!granted) {
+      setIsLocationServiceEnabled(null);
+      return;
+    }
+
+    const servicesEnabled = await Location.hasServicesEnabledAsync();
+    setIsLocationServiceEnabled(servicesEnabled);
+  };
+
+  const requestLocationPermission = async () => {
+    if (locationPermission === 'denied') {
+      await Linking.openSettings();
+      return;
+    }
+
+    setIsRequestingLocation(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      const granted = permission.status === 'granted';
+      setLocationPermission(granted ? 'granted' : 'denied');
+
+      if (!granted) {
+        setIsLocationServiceEnabled(null);
+        return;
+      }
+
+      if (Location.enableNetworkProviderAsync) {
+        await Location.enableNetworkProviderAsync().catch(() => {});
+      }
+
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      setIsLocationServiceEnabled(servicesEnabled);
+    } finally {
+      setIsRequestingLocation(false);
+    }
+  };
 
   const applyPublicationPreset = (preset: {
     publicationMode: PublicationMode;
@@ -139,6 +186,14 @@ export default function PostScreen() {
     params.title,
   ]);
 
+  useEffect(() => {
+    syncLocationState().catch(() => {
+      setLocationPermission('denied');
+      setIsLocationServiceEnabled(null);
+      setIsRequestingLocation(false);
+    });
+  }, []);
+
   const canSubmit = useMemo(
     () =>
       title.trim().length > 0 &&
@@ -161,8 +216,11 @@ export default function PostScreen() {
     if (!isLoanPublication && targetPeriod.trim().length === 0) {
       missing.push('période');
     }
+    if (!isLocationReady) {
+      missing.push('position activée');
+    }
     return missing;
-  }, [description, isLoanPublication, photoUri, targetPeriod, title]);
+  }, [description, isLoanPublication, isLocationReady, photoUri, targetPeriod, title]);
 
   const titleError = title.trim().length === 0 ? (isLoanPublication ? 'Le nom de l’objet est requis.' : 'L’objet recherché est requis.') : null;
   const descriptionError = description.trim().length === 0 ? 'La description est requise.' : null;
@@ -227,6 +285,17 @@ export default function PostScreen() {
   const submitPost = async () => {
     setSubmitAttempted(true);
     if (!canSubmit) {
+      return;
+    }
+
+    if (!isLocationReady) {
+      await requestLocationPermission();
+      showAppNotice(
+        locationPermission === 'denied'
+          ? 'Active la localisation dans les réglages avant de publier.'
+          : 'Active la localisation pour publier cette annonce.',
+        'warning'
+      );
       return;
     }
 
@@ -327,6 +396,39 @@ export default function PostScreen() {
                     </ThemedText>
                   </Pressable>
                 </View>
+              </View>
+
+              <View style={styles.formGroup}>
+                <ThemedText type="defaultSemiBold">Position</ThemedText>
+                <View style={[styles.locationRow, { borderColor: border, backgroundColor: surface }]}>
+                  <MaterialIcons name="my-location" size={16} color={tint} />
+                  <View style={styles.locationTextWrap}>
+                    <ThemedText type="defaultSemiBold" style={{ fontSize: 13 }}>
+                      {isLocationReady ? 'Position active' : 'Position requise pour publier'}
+                    </ThemedText>
+                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                      {isLocationReady
+                        ? 'Tes annonces seront publiées avec une zone locale fiable.'
+                        : locationPermission === 'denied'
+                          ? 'Autorisation refusée: ouvre les réglages pour l’activer.'
+                          : 'Active la localisation pour pouvoir publier.'}
+                    </ThemedText>
+                  </View>
+                </View>
+                {!isLocationReady ? (
+                  <Button
+                    label={
+                      isRequestingLocation
+                        ? 'Activation en cours...'
+                        : locationPermission === 'denied'
+                          ? 'Ouvrir les réglages localisation'
+                          : 'Activer ma position'
+                    }
+                    variant="secondary"
+                    onPress={requestLocationPermission}
+                    disabled={isRequestingLocation}
+                  />
+                ) : null}
               </View>
 
               <View style={styles.formGroup}>
@@ -706,6 +808,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     flexWrap: 'wrap',
+  },
+  locationRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  locationTextWrap: {
+    flex: 1,
+    gap: 2,
   },
   categoryChip: {
     borderWidth: 1,

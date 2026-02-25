@@ -15,6 +15,13 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { DISCOVER_FILTERS, DISCOVER_OBJECTS, NEIGHBORHOOD_PULSE, useBackendDataVersion } from '@/lib/backend/data';
 
+const DISTANCE_FILTERS = [
+  { label: 'Tous', value: null },
+  { label: '5 km', value: 5 },
+  { label: '10 km', value: 10 },
+  { label: '20 km', value: 20 },
+] as const;
+
 export default function TabTwoScreen() {
   useBackendDataVersion();
   const router = useRouter();
@@ -29,6 +36,7 @@ export default function TabTwoScreen() {
   const [isLocationServiceEnabled, setIsLocationServiceEnabled] = useState<boolean | null>(null);
   const [isRequestingLocation, setIsRequestingLocation] = useState(false);
   const [lastLocationLabel, setLastLocationLabel] = useState<string | null>(null);
+  const [activeDistanceKm, setActiveDistanceKm] = useState<(typeof DISTANCE_FILTERS)[number]['value']>(null);
 
   const refreshLiveLocation = useCallback(async () => {
     const servicesEnabled = await Location.hasServicesEnabledAsync();
@@ -110,7 +118,7 @@ export default function TabTwoScreen() {
       ? sortedObjects
       : sortedObjects.filter((objectItem) => objectItem.category === activeCategory);
   const normalizedSearch = searchQuery.trim().toLowerCase();
-  const filtered = filteredByCategory.filter((objectItem) => {
+  const filteredBySearch = filteredByCategory.filter((objectItem) => {
     if (!normalizedSearch) {
       return true;
     }
@@ -121,6 +129,9 @@ export default function TabTwoScreen() {
       objectItem.ownerName.toLowerCase().includes(normalizedSearch)
     );
   });
+  const filtered = activeDistanceKm === null
+    ? filteredBySearch
+    : filteredBySearch.filter((objectItem) => objectItem.distanceKm <= activeDistanceKm);
   const nearbyCount = filtered.filter((item) => item.distanceKm <= 1).length;
 
   return (
@@ -211,6 +222,38 @@ export default function TabTwoScreen() {
           })}
         </ScrollView>
 
+        <View style={styles.distanceBlock}>
+          <ThemedText type="defaultSemiBold" style={{ fontSize: 13 }}>
+            Rayon
+          </ThemedText>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+            {DISTANCE_FILTERS.map((distanceFilter) => {
+              const active = distanceFilter.value === activeDistanceKm;
+              return (
+                <Pressable
+                  key={distanceFilter.label}
+                  onPress={() => setActiveDistanceKm(distanceFilter.value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Filtrer dans un rayon de ${distanceFilter.label}`}
+                  accessibilityState={{ selected: active }}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? colors.tint : colors.surface,
+                      borderColor: active ? colors.tint : colors.border,
+                    },
+                  ]}>
+                  <ThemedText
+                    type="defaultSemiBold"
+                    style={{ color: active ? '#FFFFFF' : colors.text, fontSize: 13, lineHeight: 18 }}>
+                    {distanceFilter.label}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
         <View style={styles.listWrap}>
           {filtered.length === 0 ? (
             <Card style={[styles.emptyStateCard, { borderColor: colors.border }]}>
@@ -270,6 +313,9 @@ const styles = StyleSheet.create({
   },
   headerBlock: {
     gap: 4,
+  },
+  distanceBlock: {
+    gap: 6,
   },
   chipsRow: {
     gap: 8,
