@@ -331,3 +331,49 @@ export async function updatePrivateLocationPreference(input: PrivateLocationPref
     throw updateError;
   }
 }
+
+export async function updateProfilePhotoPreference(photoUri: string) {
+  const normalizedPhotoUri = photoUri.trim();
+  if (!normalizedPhotoUri) {
+    throw new Error('Photo de profil invalide.');
+  }
+
+  const client = getSupabaseClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await client.auth.getUser();
+
+  if (userError) {
+    throw userError;
+  }
+
+  if (!user) {
+    throw new Error('Session utilisateur introuvable.');
+  }
+
+  const metadata = (user.user_metadata as Record<string, unknown> | undefined) ?? {};
+
+  const { error: updateError } = await client.auth.updateUser({
+    data: {
+      ...metadata,
+      avatar_url: normalizedPhotoUri,
+      profile_photo_updated_at: new Date().toISOString(),
+    },
+  });
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  await client
+    .from('users')
+    .upsert(
+      {
+        id: user.id,
+        avatar_url: normalizedPhotoUri,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+}

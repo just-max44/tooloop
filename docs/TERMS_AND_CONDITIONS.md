@@ -87,4 +87,4 @@ Les présentes CGU sont soumises au droit applicable au siège de l’éditeur, 
 
 ## 13. Contact
 
-Contact général : contact@tooloop.app
+Contact général : tooloop-app@proton.me

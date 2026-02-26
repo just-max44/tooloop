@@ -103,7 +103,7 @@ export function initializeSupabaseAuthLifecycle() {
 export function getSupabaseClient() {
   if (!supabase) {
     throw new Error(
-      'Backend non configuré: définis EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY dans .env'
+      'Backend non configuré: définis EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY dans .env (local) et dans EAS Environment Variables (build APK/AAB).'
     );
   }
 

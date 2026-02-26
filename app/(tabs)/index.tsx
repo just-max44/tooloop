@@ -143,7 +143,7 @@ export default function HomeScreen() {
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>
                   En attendant, découvre les offres disponibles autour de toi.
                 </ThemedText>
-                <Button label="Voir les offres" variant="secondary" onPress={() => router.push('/(tabs)/explore')} />
+                <Button label="Voir les offres" onPress={() => router.push('/(tabs)/explore')} />
               </Card>
             ) : (
               suggestions.map((suggestionItem) => {

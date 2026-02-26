@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -13,8 +13,9 @@ import { Card } from '@/components/ui/card';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { DISCOVER_OBJECTS, getObjectStoryById, useBackendDataVersion } from '@/lib/backend/data';
+import { DISCOVER_OBJECTS, getObjectImageByLoanObjectName, getObjectStoryById, useBackendDataVersion } from '@/lib/backend/data';
 import { estimateObjectPrice } from '@/lib/price-estimator';
+import { getListingById } from '@/stores/listings-store';
 import { getStoryContributionsByObjectId } from '@/stores/object-story-store';
 
 const DURATIONS = [
@@ -26,7 +27,7 @@ const DURATIONS = [
 export default function ObjectDetailScreen() {
   useBackendDataVersion();
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, listingId } = useLocalSearchParams<{ id: string; listingId?: string }>();
 
   const colorScheme = useColorScheme();
   const resolvedTheme = colorScheme === 'dark' ? 'dark' : 'light';
@@ -39,6 +40,7 @@ export default function ObjectDetailScreen() {
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [requestSubmitted, setRequestSubmitted] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasHeroImageError, setHasHeroImageError] = useState(false);
 
   const onRefresh = () => {
     setIsRefreshing(true);
@@ -51,6 +53,58 @@ export default function ObjectDetailScreen() {
     () => DISCOVER_OBJECTS.find((discoverItem) => discoverItem.id === id),
     [id],
   );
+
+  const fallbackListing = useMemo(() => {
+    if (typeof listingId === 'string' && listingId.length > 0) {
+      return getListingById(listingId);
+    }
+
+    if (typeof id === 'string' && id.length > 0) {
+      return getListingById(id);
+    }
+
+    return undefined;
+  }, [id, listingId]);
+
+  const displayItem = useMemo(() => {
+    if (objectItem) {
+      return {
+        title: objectItem.title,
+        description: objectItem.description,
+        imageUrl: objectItem.imageUrl,
+        distanceKm: objectItem.distanceKm,
+        ownerName: objectItem.ownerName,
+        responseTime: objectItem.responseTime,
+        isFree: objectItem.isFree,
+      };
+    }
+
+    if (!fallbackListing) {
+      return null;
+    }
+
+    const matchedImage = getObjectImageByLoanObjectName(fallbackListing.title) ?? DISCOVER_OBJECTS[0]?.imageUrl ?? '';
+
+    return {
+      title: fallbackListing.title,
+      description: fallbackListing.description,
+      imageUrl: matchedImage,
+      distanceKm: 1.0,
+      ownerName: 'Membre Tooloop',
+      responseTime: 'quelques heures',
+      isFree: !fallbackListing.requiresDeposit,
+    };
+  }, [fallbackListing, objectItem]);
+
+  const heroImageUri = displayItem?.imageUrl?.trim() ?? '';
+
+  useEffect(() => {
+    setHasHeroImageError(false);
+  }, [heroImageUri]);
+
+  const heroImageSource = heroImageUri && !hasHeroImageError
+    ? { uri: heroImageUri }
+    : require('../../assets/images/icon.png');
 
   const priceEstimate = useMemo(() => {
     if (!objectItem) {
@@ -122,7 +176,7 @@ export default function ObjectDetailScreen() {
     router.push({ pathname: '/trust', params: { userName, role } });
   };
 
-  if (!objectItem) {
+  if (!displayItem) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}> 
         <ThemedView style={styles.page}>
@@ -161,14 +215,19 @@ export default function ObjectDetailScreen() {
         <ThemedView style={styles.page}>
           <Card style={styles.heroCard}>
             <View style={styles.heroImageWrap}>
-              <Image source={{ uri: objectItem.imageUrl }} style={styles.heroImage} contentFit="cover" />
+              <Image
+                source={heroImageSource}
+                style={styles.heroImage}
+                contentFit="cover"
+                onError={() => setHasHeroImageError(true)}
+              />
             </View>
-            <ThemedText type="title">{objectItem.title}</ThemedText>
-            <ThemedText style={[styles.subtitle, { color: mutedText }]}>{objectItem.description}</ThemedText>
+            <ThemedText type="title">{displayItem.title}</ThemedText>
+            <ThemedText style={[styles.subtitle, { color: mutedText }]}>{displayItem.description}</ThemedText>
 
             <View style={styles.badgesRow}>
-              {objectItem.isFree ? <Badge label="Gratuit" variant="primary" /> : <Badge label="Caution" variant="danger" />}
-              <Badge label={`📍 À ${objectItem.distanceKm} km`} variant="primary" />
+              {displayItem.isFree ? <Badge label="Gratuit" variant="primary" /> : <Badge label="Caution" variant="danger" />}
+              <Badge label={`📍 À ${displayItem.distanceKm} km`} variant="primary" />
             </View>
           </Card>
 
@@ -176,15 +235,15 @@ export default function ObjectDetailScreen() {
             <ThemedText type="defaultSemiBold">Propriétaire</ThemedText>
             <View style={styles.ownerRow}>
               <Pressable
-                onPress={() => openTrust(objectItem.ownerName, 'prêteur')}
+                onPress={() => (objectItem ? openTrust(displayItem.ownerName, 'prêteur') : null)}
                 accessibilityRole="button"
-                accessibilityLabel={`Ouvrir la confiance de ${objectItem.ownerName}`}>
-                <Avatar name={objectItem.ownerName} size={44} />
+                accessibilityLabel={`Ouvrir la confiance de ${displayItem.ownerName}`}>
+                <Avatar name={displayItem.ownerName} size={44} />
               </Pressable>
               <View>
-                <ThemedText type="defaultSemiBold">{objectItem.ownerName}</ThemedText>
-                <ThemedText style={{ color: mutedText }}>Répond en {objectItem.responseTime}</ThemedText>
-                <ThemedText style={{ color: colors.tint, fontSize: 12 }}>Voir la confiance locale</ThemedText>
+                <ThemedText type="defaultSemiBold">{displayItem.ownerName}</ThemedText>
+                <ThemedText style={{ color: mutedText }}>Répond en {displayItem.responseTime}</ThemedText>
+                {objectItem ? <ThemedText style={{ color: colors.tint, fontSize: 12 }}>Voir la confiance locale</ThemedText> : null}
               </View>
             </View>
           </Card>
@@ -251,7 +310,7 @@ export default function ObjectDetailScreen() {
               <View style={styles.requestSentCard}>
                 <ThemedText type="defaultSemiBold">✅ Demande envoyée</ThemedText>
                 <ThemedText style={{ color: mutedText }}>
-                  Ta demande pour {objectItem.title} ({selectedDurationLabel}) est en attente d’acceptation par {objectItem.ownerName}.
+                  Ta demande pour {displayItem.title} ({selectedDurationLabel}) est en attente d’acceptation par {displayItem.ownerName}.
                 </ThemedText>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>
                   Tu pourras continuer l’échange après acceptation (chat + pass d’échange).

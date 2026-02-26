@@ -59,8 +59,7 @@ export default function PrivacyPolicyScreen() {
             </Section>
             <View style={[styles.contactBox, { borderColor: border, backgroundColor: surface }]}>
               <ThemedText type="defaultSemiBold">Contact</ThemedText>
-              <ThemedText style={{ color: mutedText }}>privacy@tooloop.app</ThemedText>
-              <ThemedText style={{ color: mutedText }}>contact@tooloop.app</ThemedText>
+              <ThemedText style={{ color: mutedText }}>tooloop-app@proton.me</ThemedText>
             </View>
           </Card>
         </ScrollView>

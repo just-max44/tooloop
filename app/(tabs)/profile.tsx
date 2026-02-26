@@ -1,4 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -12,6 +13,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Collapsible } from '@/components/ui/collapsible';
 import { LEGAL_ROUTES } from '@/constants/legal';
 import { Radius } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -22,9 +24,17 @@ import {
     sendPasswordResetEmail,
     signOutSession,
     updatePrivateLocationPreference,
+    updateProfilePhotoPreference,
     useAuthSession,
 } from '@/lib/backend/auth';
-import { PROFILE_STATS, TRUST_PROFILE, getSuccessTagsStatus, useBackendDataVersion } from '@/lib/backend/data';
+import {
+    PROFILE_STATS,
+    TRUST_PROFILE,
+    getObjectByLoanObjectName,
+    getSuccessTagsStatus,
+    refreshBackendData,
+    useBackendDataVersion,
+} from '@/lib/backend/data';
 import { isBackendConfigured } from '@/lib/backend/supabase';
 import {
     ensureNotificationPermission,
@@ -36,7 +46,7 @@ import {
 } from '@/lib/notifications/service';
 import { showAppNotice } from '@/stores/app-notice-store';
 import { removeListing, useListings } from '@/stores/listings-store';
-import { updateProfilePhoto, useProfile } from '@/stores/profile-store';
+import { useProfile } from '@/stores/profile-store';
 
 export default function ProfileScreen() {
   useBackendDataVersion();
@@ -47,6 +57,7 @@ export default function ProfileScreen() {
   const mutedText = useThemeColor({}, 'mutedText');
   const danger = useThemeColor({}, 'danger');
   const tint = useThemeColor({}, 'tint');
+  const text = useThemeColor({}, 'text');
 
   const listings = useListings();
   const profile = useProfile();
@@ -70,6 +81,8 @@ export default function ProfileScreen() {
   const [privatePostalCode, setPrivatePostalCode] = useState('');
   const [isPrivateLocationLoading, setIsPrivateLocationLoading] = useState(false);
   const [isPrivateLocationUpdatingFromGps, setIsPrivateLocationUpdatingFromGps] = useState(false);
+  const [pendingProfilePhotoUri, setPendingProfilePhotoUri] = useState<string | null>(null);
+  const [isPublishingProfilePhoto, setIsPublishingProfilePhoto] = useState(false);
   const hasPasswordDraft = newPassword.length > 0 || confirmNewPassword.length > 0;
   const passwordMatchState =
     !hasPasswordDraft ? null : newPassword === confirmNewPassword ? 'match' : 'mismatch';
@@ -142,10 +155,16 @@ export default function ProfileScreen() {
       return;
     }
 
-    if (listing.linkedObjectId) {
-      router.push({ pathname: '/object/[id]', params: { id: listing.linkedObjectId } });
+    const objectIdFromListing = listing.linkedObjectId;
+    const matchedObject = getObjectByLoanObjectName(listing.title);
+    const objectId = objectIdFromListing || matchedObject?.id;
+
+    if (objectId) {
+      router.push({ pathname: '/object/[id]', params: { id: objectId } });
       return;
     }
+
+    router.push({ pathname: '/object/[id]', params: { id: listing.id, listingId: listing.id } });
   };
 
   const editListing = (listingId: string) => {
@@ -172,8 +191,28 @@ export default function ProfileScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      updateProfilePhoto(result.assets[0].uri);
+      setPendingProfilePhotoUri(result.assets[0].uri);
+      showAppNotice('Photo prête: publie-la pour confirmer.', 'info');
+    }
+  };
+
+  const publishProfilePhoto = async () => {
+    if (!pendingProfilePhotoUri) {
+      showAppNotice('Choisis une photo avant de publier.', 'warning');
+      return;
+    }
+
+    setIsPublishingProfilePhoto(true);
+    try {
+      await updateProfilePhotoPreference(pendingProfilePhotoUri);
+      await refreshBackendData();
+      setPendingProfilePhotoUri(null);
       showAppNotice('Photo de profil mise à jour.', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Impossible de publier la photo de profil.';
+      showAppNotice(message, 'error');
+    } finally {
+      setIsPublishingProfilePhoto(false);
     }
   };
 
@@ -427,11 +466,20 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <View style={styles.statsRow}>
-              <View style={[styles.statItem, { backgroundColor: surface, borderColor: border }]}>
-                <ThemedText type="defaultSemiBold">{PROFILE_STATS.rating.toFixed(1)} ⭐</ThemedText>
-                <ThemedText style={{ color: mutedText, fontSize: 12 }}>{PROFILE_STATS.reviews} avis</ThemedText>
+            {pendingProfilePhotoUri ? (
+              <View style={[styles.photoPublishCard, { borderColor: border, backgroundColor: surface }]}>
+                <ThemedText type="defaultSemiBold">Nouvelle photo de profil</ThemedText>
+                <View style={styles.pendingPhotoPreviewWrap}>
+                  <Image source={{ uri: pendingProfilePhotoUri }} style={styles.pendingPhotoPreview} contentFit="cover" />
+                </View>
+                <View style={styles.pendingPhotoActions}>
+                  <Button label="Redimensionner" variant="secondary" onPress={pickProfilePhoto} />
+                  <Button label="Publier" variant="secondary" loading={isPublishingProfilePhoto} onPress={publishProfilePhoto} />
+                </View>
               </View>
+            ) : null}
+
+            <View style={styles.statsRow}>
               <View style={[styles.statItem, { backgroundColor: surface, borderColor: border }]}>
                 <ThemedText type="defaultSemiBold">{PROFILE_STATS.objects}</ThemedText>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>Objets postés</ThemedText>
@@ -457,7 +505,10 @@ export default function ProfileScreen() {
           </Card>
 
           <Card style={styles.card}>
-            <ThemedText type="subtitle">Annonces publiées</ThemedText>
+            <View style={styles.sectionHeadingRow}>
+              <MaterialIcons name="inventory-2" size={16} color={tint} />
+              <ThemedText type="subtitle">Annonces publiées</ThemedText>
+            </View>
             {pendingDeleteListing ? (
               <View style={[styles.warningBox, { borderColor: `${danger}55`, backgroundColor: `${danger}12` }]}>
                 <ThemedText type="defaultSemiBold" style={{ color: danger }}>
@@ -557,144 +608,180 @@ export default function ProfileScreen() {
           </Card>
 
           <Card style={styles.card}>
-            <ThemedText type="subtitle">Compte</ThemedText>
-            <View style={[styles.privateLocationCard, { borderColor: border, backgroundColor: surface }]}>
-              <ThemedText type="defaultSemiBold">Zone privée par défaut</ThemedText>
-              <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                Utilisée si la géolocalisation n’est pas active au moment de publier.
-              </ThemedText>
-              <View style={styles.privateLocationInputsRow}>
-                <TextInput
-                  value={privatePostalCode}
-                  onChangeText={setPrivatePostalCode}
-                  placeholder="Code postal"
-                  placeholderTextColor={mutedText}
-                  keyboardType="number-pad"
-                  style={[styles.privateLocationInput, { borderColor: border, backgroundColor: background }]}
-                />
-                <TextInput
-                  value={privateCity}
-                  onChangeText={setPrivateCity}
-                  placeholder="Ville"
-                  placeholderTextColor={mutedText}
-                  style={[styles.privateLocationInput, { borderColor: border, backgroundColor: background }]}
-                />
-              </View>
-              <View style={styles.privateLocationActions}>
-                <Button
-                  label="Enregistrer"
-                  variant="secondary"
-                  loading={isPrivateLocationLoading}
-                  onPress={handleSavePrivateLocation}
-                />
-                <Button
-                  label="Mettre à jour depuis ma position"
-                  variant="secondary"
-                  loading={isPrivateLocationUpdatingFromGps}
-                  onPress={handleUpdatePrivateLocationFromCurrentPosition}
-                />
-              </View>
+            <View style={styles.sectionHeadingRow}>
+              <MaterialIcons name="manage-accounts" size={16} color={tint} />
+              <ThemedText type="subtitle">Compte</ThemedText>
             </View>
-            <View style={[styles.notificationRow, { borderColor: border, backgroundColor: surface }]}>
-              <View style={styles.notificationTextWrap}>
-                <ThemedText type="defaultSemiBold">Notifications</ThemedText>
-                <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                  {notificationsEnabled ? 'Activées' : 'Désactivées'}
-                </ThemedText>
-              </View>
-              <Button
-                label={notificationsEnabled ? 'Désactiver' : 'Activer'}
-                variant="secondary"
-                loading={isNotificationsLoading}
-                onPress={handleToggleNotifications}
-              />
+            <View style={[styles.accountSectionCard, { borderColor: border, backgroundColor: surface }]}>
+              <Collapsible title="Localisation privée">
+                <View style={styles.collapsibleContentWrap}>
+                  <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                    Utilisée si la géolocalisation n’est pas active au moment de publier.
+                  </ThemedText>
+                  <View style={styles.privateLocationInputsRow}>
+                    <View style={styles.privateLocationInputBlock}>
+                      <View style={styles.privateLocationInputLabelRow}>
+                        <MaterialIcons name="markunread-mailbox" size={14} color={tint} />
+                        <ThemedText style={styles.privateLocationInputLabel}>Code postal</ThemedText>
+                      </View>
+                      <TextInput
+                        value={privatePostalCode}
+                        onChangeText={setPrivatePostalCode}
+                        placeholder="Code postal"
+                        placeholderTextColor={mutedText}
+                        keyboardType="number-pad"
+                        style={[styles.privateLocationInput, { color: text, borderColor: border, backgroundColor: surface }]}
+                      />
+                    </View>
+                    <View style={styles.privateLocationInputBlock}>
+                      <View style={styles.privateLocationInputLabelRow}>
+                        <MaterialIcons name="location-city" size={14} color={tint} />
+                        <ThemedText style={styles.privateLocationInputLabel}>Ville</ThemedText>
+                      </View>
+                      <TextInput
+                        value={privateCity}
+                        onChangeText={setPrivateCity}
+                        placeholder="Ville"
+                        placeholderTextColor={mutedText}
+                        style={[styles.privateLocationInput, { color: text, borderColor: border, backgroundColor: surface }]}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.privateLocationActions}>
+                    <Button
+                      label="Enregistrer"
+                      loading={isPrivateLocationLoading}
+                      style={styles.privateLocationActionButton}
+                      onPress={handleSavePrivateLocation}
+                    />
+                    <Button
+                      label="Mettre à jour"
+                      variant="secondary"
+                      loading={isPrivateLocationUpdatingFromGps}
+                      style={styles.privateLocationActionButton}
+                      onPress={handleUpdatePrivateLocationFromCurrentPosition}
+                    />
+                  </View>
+                </View>
+              </Collapsible>
             </View>
-            <View style={styles.notificationTypesWrap}>
-              {(
-                [
-                  { type: 'new_message_received', label: 'Nouveau message reçu' },
-                  { type: 'loan_request_accepted', label: 'Demande acceptée' },
-                  { type: 'return_due_tomorrow', label: 'Rappel retour demain' },
-                ] as const
-              ).map((item) => (
-                <View key={item.type} style={[styles.notificationTypeRow, { borderColor: border, backgroundColor: surface }]}> 
-                  <ThemedText style={{ color: mutedText, fontSize: 12 }}>{item.label}</ThemedText>
+
+            <View style={[styles.accountSectionCard, { borderColor: border, backgroundColor: surface }]}>
+              <Collapsible title="Notifications">
+                <View style={styles.collapsibleContentWrap}>
+                  <View style={[styles.notificationRow, { borderColor: border, backgroundColor: surface }]}>
+                    <View style={styles.notificationTextWrap}>
+                      <ThemedText type="defaultSemiBold">Notifications</ThemedText>
+                      <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                        {notificationsEnabled ? 'Activées' : 'Désactivées'}
+                      </ThemedText>
+                    </View>
+                    <Button
+                      label={notificationsEnabled ? 'Désactiver' : 'Activer'}
+                      variant="secondary"
+                      loading={isNotificationsLoading}
+                      style={styles.notificationActionButton}
+                      onPress={handleToggleNotifications}
+                    />
+                  </View>
+                  <View style={styles.notificationTypesWrap}>
+                    {(
+                      [
+                        { type: 'new_message_received', label: 'Nouveau message reçu' },
+                        { type: 'loan_request_accepted', label: 'Demande acceptée' },
+                        { type: 'return_due_tomorrow', label: 'Rappel retour demain' },
+                      ] as const
+                    ).map((item) => (
+                      <View key={item.type} style={[styles.notificationTypeRow, { borderColor: border, backgroundColor: surface }]}> 
+                        <ThemedText style={[styles.notificationTypeLabel, { color: mutedText, fontSize: 12 }]} numberOfLines={2}>
+                          {item.label}
+                        </ThemedText>
+                        <Button
+                          label={notificationTypePreferences[item.type] ? 'On' : 'Off'}
+                          variant="secondary"
+                          loading={isNotificationsLoading}
+                          style={styles.notificationActionButton}
+                          onPress={() => handleToggleNotificationType(item.type)}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </Collapsible>
+            </View>
+
+            <View style={[styles.accountSectionCard, { borderColor: border, backgroundColor: surface }]}>
+              <Collapsible title="Mot de passe">
+                <View style={styles.collapsibleContentWrap}>
+                  <View style={[styles.passwordHintBox, { borderColor: border, backgroundColor: surface }]}>
+                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                      Saisis ton ancien mot de passe puis ton nouveau mot de passe.
+                    </ThemedText>
+                  </View>
+                  <TextInput
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    placeholder="Ancien mot de passe"
+                    placeholderTextColor={mutedText}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[styles.passwordInput, { color: text, borderColor: border, backgroundColor: surface }]}
+                  />
+                  <TextInput
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    placeholder="Nouveau mot de passe"
+                    placeholderTextColor={mutedText}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[styles.passwordInput, { color: text, borderColor: border, backgroundColor: surface }]}
+                  />
+                  <TextInput
+                    value={confirmNewPassword}
+                    onChangeText={setConfirmNewPassword}
+                    placeholder="Confirmer le nouveau mot de passe"
+                    placeholderTextColor={mutedText}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[styles.passwordInput, { color: text, borderColor: border, backgroundColor: surface }]}
+                  />
+                  {passwordMatchState ? (
+                    <View
+                      style={[
+                        styles.passwordMatchHint,
+                        {
+                          borderColor: passwordMatchState === 'match' ? `${tint}66` : `${danger}66`,
+                          backgroundColor: passwordMatchState === 'match' ? `${tint}14` : `${danger}12`,
+                        },
+                      ]}>
+                      <ThemedText
+                        style={{ color: passwordMatchState === 'match' ? tint : danger, fontSize: 12 }}>
+                        {passwordMatchState === 'match'
+                          ? 'Les mots de passe correspondent.'
+                          : 'Les mots de passe ne correspondent pas.'}
+                      </ThemedText>
+                    </View>
+                  ) : null}
                   <Button
-                    label={notificationTypePreferences[item.type] ? 'On' : 'Off'}
+                    label="Mettre à jour le mot de passe"
+                    loading={isPasswordUpdateLoading}
+                    onPress={handleDirectPasswordChange}
+                  />
+                  <ThemedText style={{ color: mutedText, fontSize: 12 }}>
+                    Si besoin, tu peux aussi recevoir un lien de réinitialisation par email.
+                  </ThemedText>
+                  <Button
+                    label="Envoyer un lien de réinitialisation"
                     variant="secondary"
-                    loading={isNotificationsLoading}
-                    onPress={() => handleToggleNotificationType(item.type)}
+                    loading={isPasswordResetLoading}
+                    onPress={handlePasswordReset}
                   />
                 </View>
-              ))}
+              </Collapsible>
             </View>
-            <View style={[styles.passwordHintBox, { borderColor: border, backgroundColor: surface }]}>
-              <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                Changer mot de passe: saisis ton ancien mot de passe puis ton nouveau mot de passe.
-              </ThemedText>
-            </View>
-            <TextInput
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              placeholder="Ancien mot de passe"
-              placeholderTextColor={mutedText}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={[styles.passwordInput, { borderColor: border, backgroundColor: surface }]}
-            />
-            <TextInput
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="Nouveau mot de passe"
-              placeholderTextColor={mutedText}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={[styles.passwordInput, { borderColor: border, backgroundColor: surface }]}
-            />
-            <TextInput
-              value={confirmNewPassword}
-              onChangeText={setConfirmNewPassword}
-              placeholder="Confirmer le nouveau mot de passe"
-              placeholderTextColor={mutedText}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={[styles.passwordInput, { borderColor: border, backgroundColor: surface }]}
-            />
-            {passwordMatchState ? (
-              <View
-                style={[
-                  styles.passwordMatchHint,
-                  {
-                    borderColor: passwordMatchState === 'match' ? `${tint}66` : `${danger}66`,
-                    backgroundColor: passwordMatchState === 'match' ? `${tint}14` : `${danger}12`,
-                  },
-                ]}>
-                <ThemedText
-                  style={{ color: passwordMatchState === 'match' ? tint : danger, fontSize: 12 }}>
-                  {passwordMatchState === 'match'
-                    ? 'Les mots de passe correspondent.'
-                    : 'Les mots de passe ne correspondent pas.'}
-                </ThemedText>
-              </View>
-            ) : null}
-            <Button
-              label="Mettre à jour le mot de passe"
-              variant="secondary"
-              loading={isPasswordUpdateLoading}
-              onPress={handleDirectPasswordChange}
-            />
-            <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-              Si besoin, tu peux aussi recevoir un lien de réinitialisation par email.
-            </ThemedText>
-            <Button
-              label="Envoyer un lien de réinitialisation"
-              variant="secondary"
-              loading={isPasswordResetLoading}
-              onPress={handlePasswordReset}
-            />
             {pendingAccountAction === 'logout' ? (
               <View style={[styles.warningBox, { borderColor: `${danger}55`, backgroundColor: `${danger}12` }]}>
                 <ThemedText style={{ color: danger }}>
@@ -740,7 +827,10 @@ export default function ProfileScreen() {
           </Card>
 
           <Card style={styles.card}>
-            <ThemedText type="subtitle">Légal</ThemedText>
+            <View style={styles.sectionHeadingRow}>
+              <MaterialIcons name="gavel" size={16} color={tint} />
+              <ThemedText type="subtitle">Légal</ThemedText>
+            </View>
             <Pressable
               onPress={() => router.push(LEGAL_ROUTES.privacyPolicy as never)}
               accessibilityRole="button"
@@ -780,6 +870,11 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: 4,
+  },
+  sectionHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   statsRow: {
     flexDirection: 'row',
@@ -887,9 +982,47 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 1,
   },
+  photoPublishCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    gap: 8,
+  },
+  pendingPhotoPreviewWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: Radius.full,
+    overflow: 'hidden',
+    alignSelf: 'flex-start',
+  },
+  pendingPhotoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  pendingPhotoActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   dangerButton: {
     elevation: 0,
     shadowOpacity: 0,
+  },
+  accountSectionCard: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  collapsibleContentWrap: {
+    marginTop: 8,
+    gap: 8,
+    marginLeft: 0,
+    width: '100%',
+    alignSelf: 'center',
+    maxWidth: 680,
   },
   passwordHintBox: {
     borderWidth: 1,
@@ -908,8 +1041,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  privateLocationInput: {
+  privateLocationInputBlock: {
     flex: 1,
+    gap: 4,
+  },
+  privateLocationInputLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  privateLocationInputLabel: {
+    fontSize: 12,
+  },
+  privateLocationInput: {
     borderWidth: 1,
     borderRadius: Radius.md,
     minHeight: 44,
@@ -918,6 +1062,11 @@ const styles = StyleSheet.create({
   },
   privateLocationActions: {
     gap: 8,
+    flexDirection: 'row',
+  },
+  privateLocationActionButton: {
+    flex: 1,
+    minHeight: 38,
   },
   notificationRow: {
     borderWidth: 1,
@@ -929,6 +1078,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+    width: '100%',
+    alignSelf: 'center',
   },
   notificationTextWrap: {
     flex: 1,
@@ -947,6 +1098,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  notificationTypeLabel: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  notificationActionButton: {
+    minHeight: 36,
+    minWidth: 112,
   },
   passwordInput: {
     borderWidth: 1,

@@ -140,7 +140,7 @@ export default function LoginScreen() {
                     Backend non configuré
                   </ThemedText>
                   <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                    Ajoute EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY dans .env puis redémarre Expo.
+                    Ajoute EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY dans `.env` (dev local) et dans EAS Environment Variables (APK/AAB), puis redémarre l&apos;app.
                   </ThemedText>
                 </View>
               ) : null}

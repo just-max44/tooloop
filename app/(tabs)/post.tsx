@@ -44,7 +44,8 @@ export default function PostScreen() {
   const [selectedCategory, setSelectedCategory] = useState<(typeof CATEGORIES)[number]>('Bricolage');
   const [isPrefillApplied, setIsPrefillApplied] = useState(false);
   const [prefillSourceLabel, setPrefillSourceLabel] = useState<string | null>(null);
-  const [showPastPublications, setShowPastPublications] = useState(false);
+  const [showPastPublicationsMenu, setShowPastPublicationsMenu] = useState(false);
+  const [selectedPastPublicationId, setSelectedPastPublicationId] = useState<string | null>(null);
   const [editingListingId, setEditingListingId] = useState<string | null>(null);
   const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   const [isLocationServiceEnabled, setIsLocationServiceEnabled] = useState<boolean | null>(null);
@@ -65,6 +66,11 @@ export default function PostScreen() {
   const isLocationReady = locationPermission === 'granted' && isLocationServiceEnabled === true;
   const hasPrivateLocationFallback = privateCity.trim().length > 0 && privatePostalCode.trim().length > 0;
   const canPublishWithLocation = isLocationReady || hasPrivateLocationFallback;
+  const hasPastPublications = PAST_PUBLICATIONS.length > 0;
+  const selectedPastPublication = useMemo(
+    () => PAST_PUBLICATIONS.find((item) => item.id === selectedPastPublicationId) ?? null,
+    [selectedPastPublicationId]
+  );
 
   const syncLocationState = async () => {
     const permission = await Location.getForegroundPermissionsAsync();
@@ -129,6 +135,33 @@ export default function PostScreen() {
     setPrefillSourceLabel(`Annonce préremplie: ${preset.title}`);
   };
 
+  const resetPublicationForm = () => {
+    setPublicationMode('loan');
+    setRequiresDeposit(false);
+    setTitle('');
+    setDescription('');
+    setTargetPeriod('');
+    setPhotoUri(null);
+    setSubmitAttempted(false);
+    setTitleTouched(false);
+    setDescriptionTouched(false);
+    setTargetPeriodTouched(false);
+    setSelectedCategory('Bricolage');
+    setPrefillSourceLabel(null);
+    setSelectedPastPublicationId(null);
+  };
+
+  useEffect(() => {
+    const listingId = typeof params.listingId === 'string' ? params.listingId : '';
+    if (listingId) {
+      return;
+    }
+
+    setEditingListingId(null);
+    setIsPrefillApplied(false);
+    resetPublicationForm();
+  }, [params.listingId]);
+
   useEffect(() => {
     if (isPrefillApplied) {
       return;
@@ -160,36 +193,9 @@ export default function PostScreen() {
         return;
       }
     }
-
-    if (!params.title && !params.description) {
-      return;
-    }
-
-    const resolvedMode: PublicationMode = params.mode === 'request' ? 'request' : 'loan';
-    const categoryValue = typeof params.category === 'string' ? params.category : '';
-    const resolvedCategory = CATEGORIES.includes(categoryValue as (typeof CATEGORIES)[number])
-      ? (categoryValue as (typeof CATEGORIES)[number])
-      : 'Bricolage';
-
-    applyPublicationPreset({
-      publicationMode: resolvedMode,
-      title: typeof params.title === 'string' ? params.title : '',
-      description: typeof params.description === 'string' ? params.description : '',
-      category: resolvedCategory,
-      targetPeriod: typeof params.targetPeriod === 'string' ? params.targetPeriod : '',
-      requiresDeposit: params.requiresDeposit === '1',
-    });
-
-    setIsPrefillApplied(true);
   }, [
     isPrefillApplied,
-    params.category,
-    params.description,
     params.listingId,
-    params.mode,
-    params.requiresDeposit,
-    params.targetPeriod,
-    params.title,
   ]);
 
   useEffect(() => {
@@ -339,16 +345,7 @@ export default function PostScreen() {
     }
 
     showAppNotice(editingListingId ? 'Publication mise à jour.' : submitSuccessMessage, 'success');
-    setTitle('');
-    setDescription('');
-    setTargetPeriod('');
-    setPhotoUri(null);
-    setRequiresDeposit(false);
-    setTitleTouched(false);
-    setDescriptionTouched(false);
-    setTargetPeriodTouched(false);
-    setSubmitAttempted(false);
-    setSelectedCategory('Bricolage');
+    resetPublicationForm();
     setPublicationMode('loan');
     setEditingListingId(null);
     router.push(isLoanPublication ? '/(tabs)/explore' : '/(tabs)/inbox');
@@ -414,7 +411,6 @@ export default function PostScreen() {
             contentInsetAdjustmentBehavior="always">
             <Card style={styles.card}>
               <ThemedText type="title">{isEditing ? 'Modifier la publication' : 'Nouvelle publication'}</ThemedText>
-              <ThemedText style={[styles.subtitle, { color: mutedText }]}>Choisis le type puis complète le formulaire.</ThemedText>
 
               {prefillSourceLabel ? (
                 <View style={[styles.prefillBanner, { borderColor: `${tint}55`, backgroundColor: `${tint}12` }]}>
@@ -429,7 +425,10 @@ export default function PostScreen() {
               ) : null}
 
               <View style={styles.formGroup}>
-                <ThemedText type="defaultSemiBold">Type de publication</ThemedText>
+                <View style={styles.sectionLabelRow}>
+                  <MaterialIcons name="category" size={14} color={tint} />
+                  <ThemedText type="defaultSemiBold">Type de publication</ThemedText>
+                </View>
                 <View style={styles.modeRow}>
                   <Pressable
                     onPress={() => switchPublicationMode('loan')}
@@ -467,98 +466,91 @@ export default function PostScreen() {
               </View>
 
               <View style={styles.formGroup}>
-                <ThemedText type="defaultSemiBold">Position</ThemedText>
-                <View style={[styles.locationRow, { borderColor: border, backgroundColor: surface }]}>
-                  <MaterialIcons name="my-location" size={16} color={tint} />
-                  <View style={styles.locationTextWrap}>
-                    <ThemedText type="defaultSemiBold" style={{ fontSize: 13 }}>
-                      {isLocationReady
-                        ? 'Position active'
-                        : hasPrivateLocationFallback
-                          ? 'Zone privée utilisée pour publier'
-                          : 'Position requise pour publier'}
-                    </ThemedText>
-                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                      {isLocationReady
-                        ? 'Tes annonces seront publiées avec une zone locale fiable.'
-                        : hasPrivateLocationFallback
-                          ? `Fallback profil: ${privatePostalCode} ${privateCity}. Tu peux la mettre à jour si tu es en déplacement.`
-                        : locationPermission === 'denied'
-                          ? 'Autorisation refusée: ouvre les réglages pour l’activer.'
-                          : 'Active la localisation pour pouvoir publier.'}
-                    </ThemedText>
-                  </View>
+                <View style={styles.sectionLabelRow}>
+                  <MaterialIcons name="history" size={14} color={tint} />
+                  <ThemedText type="defaultSemiBold">Republier une annonce passée</ThemedText>
                 </View>
-                {!isLocationReady ? (
-                  <Button
-                    label={
-                      isRequestingLocation
-                        ? 'Activation en cours...'
-                        : locationPermission === 'denied'
-                          ? 'Ouvrir les réglages localisation'
-                          : 'Activer ma position'
+                <Pressable
+                  onPress={() => {
+                    if (!hasPastPublications) {
+                      return;
                     }
-                    variant="secondary"
-                    onPress={requestLocationPermission}
-                    disabled={isRequestingLocation}
+                    setShowPastPublicationsMenu((current) => !current);
+                  }}
+                  style={[styles.dropdownTrigger, { borderColor: border, backgroundColor: surface }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choisir une annonce passée"
+                  accessibilityState={{ disabled: !hasPastPublications }}>
+                  <ThemedText
+                    type="defaultSemiBold"
+                    style={{ color: hasPastPublications ? (selectedPastPublication ? text : mutedText) : mutedText, fontSize: 13 }}
+                    numberOfLines={1}>
+                    {hasPastPublications
+                      ? (selectedPastPublication ? selectedPastPublication.title : 'Sélectionner une annonce passée')
+                      : 'Aucune annonce passée disponible'}
+                  </ThemedText>
+                  <MaterialIcons
+                    name={showPastPublicationsMenu ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={18}
+                    color={mutedText}
                   />
-                ) : null}
-                <Button
-                  label={isUpdatingLocationFromDevice ? 'Mise à jour en cours...' : 'Mettre à jour depuis ma position actuelle'}
-                  variant="secondary"
-                  onPress={updatePrivateLocationFromCurrentPosition}
-                  disabled={isUpdatingLocationFromDevice}
-                />
-              </View>
+                </Pressable>
 
-              <View style={styles.formGroup}>
-                <ThemedText type="defaultSemiBold">Republier une annonce passée</ThemedText>
-                {PAST_PUBLICATIONS.length > 0 ? (
-                  <Button
-                    label={showPastPublications ? 'Masquer les annonces passées' : 'Afficher les annonces passées'}
-                    variant="secondary"
-                    onPress={() => setShowPastPublications((current) => !current)}
-                  />
-                ) : null}
-                {showPastPublications && PAST_PUBLICATIONS.length > 0 ? (
-                  <View style={styles.pastWrap}>
-                    {PAST_PUBLICATIONS.map((pastItem) => (
-                      <View key={pastItem.id} style={[styles.pastRow, { borderColor: border, backgroundColor: surface }]}>
-                        <View style={styles.pastTextWrap}>
-                          <ThemedText type="defaultSemiBold" numberOfLines={1}>{pastItem.title}</ThemedText>
-                          <ThemedText style={{ color: mutedText, fontSize: 12 }} numberOfLines={1}>
-                            {pastItem.archivedAtLabel}
+                {showPastPublicationsMenu && hasPastPublications ? (
+                  <View style={[styles.dropdownMenu, { borderColor: border, backgroundColor: surface }]}>
+                    {PAST_PUBLICATIONS.map((pastItem) => {
+                      const isSelected = selectedPastPublicationId === pastItem.id;
+                      return (
+                        <Pressable
+                          key={pastItem.id}
+                          onPress={() => {
+                            setSelectedPastPublicationId(pastItem.id);
+                            setShowPastPublicationsMenu(false);
+                          }}
+                          style={[
+                            styles.dropdownMenuItem,
+                            isSelected ? { backgroundColor: `${tint}14` } : null,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Sélectionner ${pastItem.title}`}>
+                          <ThemedText
+                            type={isSelected ? 'defaultSemiBold' : 'default'}
+                            style={{ color: isSelected ? tint : text, fontSize: 13 }}
+                            numberOfLines={1}>
+                            {pastItem.title}
                           </ThemedText>
-                        </View>
-                        <View style={styles.pastActionsWrap}>
-                          <ThemedText style={{ color: mutedText, fontSize: 11 }}>
-                            {pastItem.publicationMode === 'loan' ? 'Prêt' : 'Recherche'}
-                          </ThemedText>
-                          <Button
-                            label="Republier"
-                            variant="secondary"
-                            style={styles.republishButton}
-                            onPress={() =>
-                              applyPublicationPreset({
-                                publicationMode: pastItem.publicationMode,
-                                title: pastItem.title,
-                                description: pastItem.description,
-                                category: pastItem.category,
-                                targetPeriod: pastItem.targetPeriod,
-                                requiresDeposit: pastItem.requiresDeposit,
-                              })
-                            }
-                          />
-                        </View>
-                      </View>
-                    ))}
+                        </Pressable>
+                      );
+                    })}
                   </View>
                 ) : null}
+
+                <Button
+                  label="Pré remplir le formulaire"
+                  variant="secondary"
+                  disabled={!selectedPastPublication}
+                  onPress={() => {
+                    if (!selectedPastPublication) {
+                      return;
+                    }
+                    applyPublicationPreset({
+                      publicationMode: selectedPastPublication.publicationMode,
+                      title: selectedPastPublication.title,
+                      description: selectedPastPublication.description,
+                      category: selectedPastPublication.category,
+                      targetPeriod: selectedPastPublication.targetPeriod,
+                      requiresDeposit: selectedPastPublication.requiresDeposit,
+                    });
+                  }}
+                />
               </View>
 
               {isLoanPublication ? (
                 <View style={styles.formGroup}>
-                  <ThemedText type="defaultSemiBold">Photo de l’objet</ThemedText>
+                  <View style={styles.sectionLabelRow}>
+                    <MaterialIcons name="photo-camera" size={14} color={tint} />
+                    <ThemedText type="defaultSemiBold">Photo de l’objet</ThemedText>
+                  </View>
                   {photoUri ? (
                     <View style={[styles.photoPreviewWrap, { borderColor: border, backgroundColor: surface }]}>
                       <Image source={{ uri: photoUri }} style={styles.photoPreview} contentFit="cover" />
@@ -713,7 +705,10 @@ export default function PostScreen() {
               ) : null}
 
               <View style={styles.formGroup}>
-                <ThemedText type="defaultSemiBold">Catégorie</ThemedText>
+                <View style={styles.sectionLabelRow}>
+                  <MaterialIcons name="sell" size={14} color={tint} />
+                  <ThemedText type="defaultSemiBold">Catégorie</ThemedText>
+                </View>
                 <View style={styles.categoryWrap}>
                   {CATEGORIES.map((category) => {
                     const selected = selectedCategory === category;
@@ -737,6 +732,45 @@ export default function PostScreen() {
                 </View>
               </View>
 
+              <View style={styles.formGroup}>
+                <View style={[styles.locationCompactRow, { borderColor: border, backgroundColor: surface }]}>
+                  <MaterialIcons name="my-location" size={14} color={tint} />
+                  <ThemedText style={{ color: mutedText, fontSize: 12, flex: 1 }} numberOfLines={2}>
+                    {isLocationReady
+                      ? 'Position active'
+                      : hasPrivateLocationFallback
+                        ? `Fallback: ${privatePostalCode} ${privateCity}`
+                        : 'Position requise pour publier'}
+                  </ThemedText>
+                </View>
+                <View style={styles.locationCompactActions}>
+                  {!isLocationReady ? (
+                    <Button
+                      label={
+                        isRequestingLocation
+                          ? 'Activation...'
+                          : locationPermission === 'denied'
+                            ? 'Réglages localisation'
+                            : 'Activer position'
+                      }
+                      variant="secondary"
+                      onPress={requestLocationPermission}
+                      disabled={isRequestingLocation}
+                    />
+                  ) : null}
+                  <Button
+                    label={isUpdatingLocationFromDevice ? 'Mise à jour...' : 'Mettre à jour position'}
+                    variant="secondary"
+                    onPress={updatePrivateLocationFromCurrentPosition}
+                    disabled={isUpdatingLocationFromDevice}
+                  />
+                </View>
+                <ThemedText style={{ color: mutedText, fontSize: 11 }}>
+                  Cette zone est utilisée pour la visibilité locale de l’annonce.
+                </ThemedText>
+              </View>
+
+              <View style={[styles.publishBlock, { borderColor: border, backgroundColor: surface }]}>
               <Button
                 label={
                   isEditing
@@ -754,6 +788,7 @@ export default function PostScreen() {
                   Complète: {missingRequirements.join(', ')}.
                 </ThemedText>
               ) : null}
+              </View>
             </Card>
           </ScrollView>
         </ThemedView>
@@ -784,8 +819,10 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 14,
   },
-  subtitle: {
-    marginTop: 4,
+  sectionLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   formGroup: {
     gap: 6,
@@ -803,30 +840,25 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 1,
   },
-  pastWrap: {
-    gap: 8,
-  },
-  pastRow: {
+  dropdownTrigger: {
     borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 44,
+    paddingHorizontal: 12,
     gap: 8,
   },
-  pastTextWrap: {
-    flex: 1,
-    gap: 2,
+  dropdownMenu: {
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
-  pastActionsWrap: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  republishButton: {
-    minHeight: 34,
-    paddingHorizontal: 10,
+  dropdownMenuItem: {
+    minHeight: 42,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
   },
   modeRow: {
     flexDirection: 'row',
@@ -889,18 +921,25 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: 'wrap',
   },
-  locationRow: {
+  locationCompactRow: {
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 6,
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     alignItems: 'center',
   },
-  locationTextWrap: {
-    flex: 1,
-    gap: 2,
+  locationCompactActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  publishBlock: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    gap: 6,
   },
   categoryChip: {
     borderWidth: 1,

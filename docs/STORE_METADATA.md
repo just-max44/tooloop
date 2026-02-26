@@ -32,7 +32,7 @@ partage, prêt, voisinage, local, objets, communauté, recyclage, économie
 
 - Politique de confidentialité: https://OWNER.github.io/REPO/privacy.html
 - CGU: https://OWNER.github.io/REPO/terms.html
-- Contact support: contact@tooloop.app
+- Contact support: tooloop-app@proton.me
 
 ## Notes opérationnelles
 

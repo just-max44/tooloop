@@ -6,7 +6,7 @@ Date d’entrée en vigueur : 23 février 2026
 
 Tooloop est une plateforme de mise en relation locale pour le prêt d’objets entre utilisateurs.
 
-Contact : contact@tooloop.app
+Contact : tooloop-app@proton.me
 
 ## 2. Données collectées
 
@@ -70,7 +70,7 @@ Selon la réglementation applicable, chaque utilisateur peut demander :
 - la limitation ou l’opposition au traitement
 - la portabilité lorsque applicable
 
-Demandes : privacy@tooloop.app
+Demandes : tooloop-app@proton.me
 
 ## 10. Mineurs
 
@@ -82,4 +82,4 @@ Cette politique peut être mise à jour. En cas de modification substantielle, l
 
 ## 12. Contact
 
-Pour toute question : privacy@tooloop.app
+Pour toute question : tooloop-app@proton.me

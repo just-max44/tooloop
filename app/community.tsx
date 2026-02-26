@@ -6,7 +6,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -21,9 +20,7 @@ export default function CommunityScreen() {
   const surface = useThemeColor({}, 'surface');
   const tint = useThemeColor({}, 'tint');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const localityLabel = LOCAL_AREA.district
-    ? `${LOCAL_AREA.city} · ${LOCAL_AREA.district}`
-    : LOCAL_AREA.city;
+  const localityLabel = LOCAL_AREA.city;
 
   const onRefresh = () => {
     setIsRefreshing(true);
@@ -94,13 +91,6 @@ export default function CommunityScreen() {
                 );
               })}
             </View>
-
-            <Button
-              label="Célébrer la progression"
-              variant="secondary"
-              onPress={onRefresh}
-              accessibilityLabel="Rafraîchir les challenges"
-            />
           </Card>
         </ScrollView>
       </ThemedView>
