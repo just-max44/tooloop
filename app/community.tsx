@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { COLLECTIVE_CHALLENGES, DISCOVER_OBJECTS, LOCAL_AREA, useBackendDataVersion } from '@/lib/backend/data';
+import { COLLECTIVE_CHALLENGES, DISCOVER_OBJECTS, LOCAL_AREA, refreshBackendData, useBackendDataVersion } from '@/lib/backend/data';
 
 export default function CommunityScreen() {
   useBackendDataVersion();
@@ -22,14 +22,16 @@ export default function CommunityScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const localityLabel = LOCAL_AREA.city;
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
+    try {
+      await refreshBackendData();
+    } finally {
       setIsRefreshing(false);
-    }, 650);
+    }
   };
 
-  const localObjects = useMemo(() => DISCOVER_OBJECTS, []);
+  const localObjects = DISCOVER_OBJECTS;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>

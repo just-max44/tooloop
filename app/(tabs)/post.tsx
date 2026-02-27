@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getPrivateLocationPreference, updatePrivateLocationPreference } from '@/lib/backend/auth';
-import { CATEGORIES, DISCOVER_OBJECTS, PAST_PUBLICATIONS, useBackendDataVersion } from '@/lib/backend/data';
+import { CATEGORIES, DISCOVER_OBJECTS, PAST_PUBLICATIONS, refreshBackendData, useBackendDataVersion } from '@/lib/backend/data';
 import { showAppNotice } from '@/stores/app-notice-store';
 import { addListing, getListingById, updateListing } from '@/stores/listings-store';
 
@@ -50,6 +50,7 @@ export default function PostScreen() {
   const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   const [isLocationServiceEnabled, setIsLocationServiceEnabled] = useState<boolean | null>(null);
   const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [privateCity, setPrivateCity] = useState('');
   const [privatePostalCode, setPrivatePostalCode] = useState('');
   const [isUpdatingLocationFromDevice, setIsUpdatingLocationFromDevice] = useState(false);
@@ -182,6 +183,10 @@ export default function PostScreen() {
         setEditingListingId(listing.id);
         setPrefillSourceLabel(`Modification: ${listing.title}`);
 
+        if (listing.photoUri) {
+          setPhotoUri(listing.photoUri);
+        }
+
         if (listing.publicationMode === 'loan' && listing.linkedObjectId) {
           const linkedObject = DISCOVER_OBJECTS.find((item) => item.id === listing.linkedObjectId);
           if (linkedObject?.imageUrl) {
@@ -282,7 +287,7 @@ export default function PostScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.8,
       allowsEditing: true,
       aspect: [4, 3],
@@ -333,22 +338,32 @@ export default function PostScreen() {
       publicationMode,
       title: title.trim(),
       description: description.trim(),
+      photoUri: publicationMode === 'loan' ? photoUri ?? undefined : undefined,
       category: selectedCategory,
       targetPeriod: publicationMode === 'request' ? targetPeriod.trim() : undefined,
       requiresDeposit: publicationMode === 'loan' ? requiresDeposit : undefined,
     } as const;
 
-    if (editingListingId) {
-      await updateListing(editingListingId, payload);
-    } else {
-      await addListing(payload);
-    }
+    try {
+      if (editingListingId) {
+        await updateListing(editingListingId, payload);
+      } else {
+        await addListing(payload);
+      }
 
-    showAppNotice(editingListingId ? 'Publication mise à jour.' : submitSuccessMessage, 'success');
-    resetPublicationForm();
-    setPublicationMode('loan');
-    setEditingListingId(null);
-    router.push(isLoanPublication ? '/(tabs)/explore' : '/(tabs)/inbox');
+      showAppNotice(editingListingId ? 'Publication mise à jour.' : submitSuccessMessage, 'success');
+      resetPublicationForm();
+      setPublicationMode('loan');
+      setEditingListingId(null);
+      router.push(isLoanPublication ? '/(tabs)/explore' : '/(tabs)/inbox');
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string')
+          ? error.message
+          : 'Publication impossible. Vérifie ta connexion et réessaie.';
+      showAppNotice(message, 'error');
+    }
   };
 
   const updatePrivateLocationFromCurrentPosition = async () => {
@@ -395,6 +410,22 @@ export default function PostScreen() {
     }
   };
 
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshBackendData();
+      await syncLocationState();
+
+      const preference = await getPrivateLocationPreference();
+      if (preference) {
+        setPrivateCity(preference.city);
+        setPrivatePostalCode(preference.postalCode);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>
       <KeyboardAvoidingView
@@ -405,6 +436,7 @@ export default function PostScreen() {
           <ScrollView
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={tint} colors={[tint]} />}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             automaticallyAdjustKeyboardInsets

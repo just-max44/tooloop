@@ -2,7 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -13,7 +13,7 @@ import { SearchBar } from '@/components/ui/search-bar';
 import { Colors, Radius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { DISCOVER_FILTERS, DISCOVER_OBJECTS, NEIGHBORHOOD_PULSE, useBackendDataVersion } from '@/lib/backend/data';
+import { DISCOVER_FILTERS, DISCOVER_OBJECTS, NEIGHBORHOOD_PULSE, refreshBackendData, useBackendDataVersion } from '@/lib/backend/data';
 
 const DISTANCE_FILTERS = [
   { label: 'Tous', value: null },
@@ -35,6 +35,7 @@ export default function TabTwoScreen() {
   const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   const [isLocationServiceEnabled, setIsLocationServiceEnabled] = useState<boolean | null>(null);
   const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastLocationLabel, setLastLocationLabel] = useState<string | null>(null);
   const [activeDistanceKm, setActiveDistanceKm] = useState<(typeof DISTANCE_FILTERS)[number]['value']>(null);
 
@@ -105,6 +106,15 @@ export default function TabTwoScreen() {
     });
   }, [syncLocationState]);
 
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([refreshBackendData(), syncLocationState()]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const sortedObjects = useMemo(() => {
     if (locationPermission !== 'granted') {
       return DISCOVER_OBJECTS;
@@ -137,7 +147,10 @@ export default function TabTwoScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ThemedView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.tint} colors={[colors.tint]} />}>
           <View style={styles.screenWrap}>
         <View style={styles.headerBlock}>
           <ThemedText type="title">Découvrir</ThemedText>

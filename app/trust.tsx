@@ -17,6 +17,7 @@ import {
     getProfilePhotoUriByName,
     getSuccessTagsStatus,
     PROFILE_USER,
+    refreshBackendData,
     TRUST_PROFILE,
     TRUST_PROOFS,
     useBackendDataVersion,
@@ -37,11 +38,13 @@ export default function TrustScreen() {
   const [selectedProfileSuccessId, setSelectedProfileSuccessId] = useState<string | null>(null);
   const [pendingProfileSuccessId, setPendingProfileSuccessId] = useState<string | null>(null);
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
+    try {
+      await refreshBackendData();
+    } finally {
       setIsRefreshing(false);
-    }, 650);
+    }
   };
 
   const metadata = session?.user?.user_metadata as Record<string, unknown> | undefined;

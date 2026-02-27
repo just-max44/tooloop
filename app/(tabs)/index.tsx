@@ -3,7 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { LayoutAnimation, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { LayoutAnimation, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -14,12 +14,13 @@ import { SearchBar } from '@/components/ui/search-bar';
 import { Colors, Radius } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { DISCOVER_OBJECTS, PERSONALIZED_SUGGESTIONS, useBackendDataVersion } from '@/lib/backend/data';
+import { DISCOVER_OBJECTS, PERSONALIZED_SUGGESTIONS, refreshBackendData, useBackendDataVersion } from '@/lib/backend/data';
 
 export default function HomeScreen() {
   useBackendDataVersion();
   const router = useRouter();
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const colorScheme = useColorScheme();
   const resolvedTheme = colorScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[resolvedTheme];
@@ -42,6 +43,15 @@ export default function HomeScreen() {
       return;
     }
     router.push(route);
+  };
+
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshBackendData();
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const steps = [
@@ -70,7 +80,10 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ThemedView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.tint} colors={[colors.tint]} />}>
           <View style={styles.screenWrap}>
         <View style={styles.headerRow}>
           <View style={styles.brandRow}>

@@ -13,8 +13,8 @@ import { Card } from '@/components/ui/card';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { DISCOVER_OBJECTS, getObjectImageByLoanObjectName, getObjectStoryById, useBackendDataVersion } from '@/lib/backend/data';
-import { estimateObjectPrice } from '@/lib/price-estimator';
+import { useAuthSession } from '@/lib/backend/auth';
+import { DISCOVER_OBJECTS, getObjectImageByLoanObjectName, getObjectStoryById, refreshBackendData, useBackendDataVersion } from '@/lib/backend/data';
 import { getListingById } from '@/stores/listings-store';
 import { getStoryContributionsByObjectId } from '@/stores/object-story-store';
 
@@ -27,6 +27,7 @@ const DURATIONS = [
 export default function ObjectDetailScreen() {
   useBackendDataVersion();
   const router = useRouter();
+  const { session } = useAuthSession();
   const { id, listingId } = useLocalSearchParams<{ id: string; listingId?: string }>();
 
   const colorScheme = useColorScheme();
@@ -42,11 +43,13 @@ export default function ObjectDetailScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasHeroImageError, setHasHeroImageError] = useState(false);
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
+    try {
+      await refreshBackendData();
+    } finally {
       setIsRefreshing(false);
-    }, 650);
+    }
   };
 
   const objectItem = useMemo(
@@ -74,6 +77,7 @@ export default function ObjectDetailScreen() {
         imageUrl: objectItem.imageUrl,
         distanceKm: objectItem.distanceKm,
         ownerName: objectItem.ownerName,
+        ownerUserId: objectItem.ownerUserId,
         responseTime: objectItem.responseTime,
         isFree: objectItem.isFree,
       };
@@ -83,7 +87,7 @@ export default function ObjectDetailScreen() {
       return null;
     }
 
-    const matchedImage = getObjectImageByLoanObjectName(fallbackListing.title) ?? DISCOVER_OBJECTS[0]?.imageUrl ?? '';
+    const matchedImage = fallbackListing.photoUri ?? getObjectImageByLoanObjectName(fallbackListing.title) ?? DISCOVER_OBJECTS[0]?.imageUrl ?? '';
 
     return {
       title: fallbackListing.title,
@@ -91,10 +95,11 @@ export default function ObjectDetailScreen() {
       imageUrl: matchedImage,
       distanceKm: 1.0,
       ownerName: 'Membre Tooloop',
+      ownerUserId: session?.user?.id,
       responseTime: 'quelques heures',
       isFree: !fallbackListing.requiresDeposit,
     };
-  }, [fallbackListing, objectItem]);
+  }, [fallbackListing, objectItem, session?.user?.id]);
 
   const heroImageUri = displayItem?.imageUrl?.trim() ?? '';
 
@@ -105,14 +110,6 @@ export default function ObjectDetailScreen() {
   const heroImageSource = heroImageUri && !hasHeroImageError
     ? { uri: heroImageUri }
     : require('../../assets/images/icon.png');
-
-  const priceEstimate = useMemo(() => {
-    if (!objectItem) {
-      return null;
-    }
-
-    return estimateObjectPrice(objectItem);
-  }, [objectItem]);
 
   const objectStory = useMemo(() => {
     if (!objectItem) {
@@ -175,6 +172,8 @@ export default function ObjectDetailScreen() {
   const openTrust = (userName: string, role: 'prêteur' | 'emprunteur') => {
     router.push({ pathname: '/trust', params: { userName, role } });
   };
+
+  const isOwnOffer = Boolean(session?.user?.id && displayItem.ownerUserId && displayItem.ownerUserId === session.user.id);
 
   if (!displayItem) {
     return (
@@ -304,9 +303,9 @@ export default function ObjectDetailScreen() {
               Vous pouvez ajuster la durée ensuite en discutant avec le prêteur.
             </ThemedText>
 
-            {!requestSubmitted ? (
+            {!isOwnOffer && !requestSubmitted ? (
               <Button label="Envoyer la demande" onPress={requestLoan} loading={isSendingRequest} />
-            ) : (
+            ) : !isOwnOffer ? (
               <View style={styles.requestSentCard}>
                 <ThemedText type="defaultSemiBold">✅ Demande envoyée</ThemedText>
                 <ThemedText style={{ color: mutedText }}>
@@ -317,24 +316,12 @@ export default function ObjectDetailScreen() {
                 </ThemedText>
                 <Button label="Voir mes échanges" variant="secondary" onPress={() => router.push('/(tabs)/inbox')} />
               </View>
+            ) : (
+              <ThemedText style={{ color: mutedText }}>
+                Cette annonce t&apos;appartient déjà.
+              </ThemedText>
             )}
           </Card>
-
-          {priceEstimate ? (
-            <Card>
-              <ThemedText type="defaultSemiBold">Économie estimée</ThemedText>
-              <View style={styles.estimateRow}>
-                <Badge label={`Fiabilité ${priceEstimate.confidence}`} variant="neutral" />
-                <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                  Basé sur {priceEstimate.sampleSize} références locales (sans API payante)
-                </ThemedText>
-              </View>
-              <ThemedText type="subtitle">Jusqu’à {priceEstimate.estimatedNewPriceEur} € évités</ThemedText>
-              <ThemedText style={{ color: mutedText }}>
-                Fourchette achat neuf estimée: {priceEstimate.lowRangeEur} € – {priceEstimate.highRangeEur} €
-              </ThemedText>
-            </Card>
-          ) : null}
 
           {objectStory ? (
             <Card>
@@ -433,10 +420,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-  },
-  estimateRow: {
-    marginTop: Spacing.sm,
-    gap: Spacing.xs,
   },
   storyBadgeRow: {
     flexDirection: 'row',

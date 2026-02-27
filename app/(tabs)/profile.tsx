@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -83,6 +83,7 @@ export default function ProfileScreen() {
   const [isPrivateLocationUpdatingFromGps, setIsPrivateLocationUpdatingFromGps] = useState(false);
   const [pendingProfilePhotoUri, setPendingProfilePhotoUri] = useState<string | null>(null);
   const [isPublishingProfilePhoto, setIsPublishingProfilePhoto] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const hasPasswordDraft = newPassword.length > 0 || confirmNewPassword.length > 0;
   const passwordMatchState =
     !hasPasswordDraft ? null : newPassword === confirmNewPassword ? 'match' : 'mismatch';
@@ -183,7 +184,7 @@ export default function ProfileScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.8,
       allowsEditing: true,
       aspect: [1, 1],
@@ -440,10 +441,22 @@ export default function ProfileScreen() {
     }
   };
 
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshBackendData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>
       <ThemedView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={tint} colors={[tint]} />}>
           <Card style={styles.card}>
             <ThemedText type="title">Profil</ThemedText>
             <ThemedText style={[styles.subtitle, { color: mutedText }]}>Ton espace de confiance et de suivi.</ThemedText>

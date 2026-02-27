@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { INBOX_LOANS, type LoanDirection, useBackendDataVersion } from '@/lib/backend/data';
+import { INBOX_LOANS, refreshBackendData, useBackendDataVersion, type LoanDirection } from '@/lib/backend/data';
 import { notifyEvent } from '@/lib/notifications/events';
 import { isFeedbackSubmitted } from '@/stores/feedback-store';
 import { acceptExchange, getEffectiveLoanState, isExchangeRefused, refuseExchange } from '@/stores/proof/closure-store';
@@ -27,6 +27,7 @@ export default function InboxScreen() {
   const router = useRouter();
   const [filter, setFilter] = useState<ExchangeFilter>('incoming');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const background = useThemeColor({}, 'background');
   const text = useThemeColor({}, 'text');
   const mutedText = useThemeColor({}, 'mutedText');
@@ -59,10 +60,23 @@ export default function InboxScreen() {
     }, [])
   );
 
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshBackendData();
+      setRefreshKey((current) => current + 1);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>
       <ThemedView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={tint} colors={[tint]} />}>
           <Card style={styles.card}>
             <ThemedText type="title">Échanges</ThemedText>
             <ThemedText style={[styles.subtitle, { color: mutedText }]}>Suis tes objets prêtés et empruntés.</ThemedText>

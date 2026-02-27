@@ -103,6 +103,7 @@ export type MyListing = {
   publicationMode: 'loan' | 'request';
   title: string;
   description: string;
+  photoUri?: string;
   category: (typeof CATEGORIES)[number];
   targetPeriod?: string;
   requiresDeposit?: boolean;
@@ -121,6 +122,7 @@ export type DiscoverObject = {
   description: string;
   imageUrl: string;
   distanceKm: number;
+  ownerUserId?: string;
   ownerName: string;
   responseTime: string;
   isPopular: boolean;
@@ -257,6 +259,48 @@ function toCategory(value: string | null | undefined): (typeof CATEGORIES)[numbe
   return 'Autre';
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const errorCode = 'code' in error ? String(error.code ?? '').toUpperCase() : '';
+  const errorMessage = 'message' in error ? String(error.message ?? '') : '';
+  const errorDetails = 'details' in error ? String(error.details ?? '') : '';
+  const errorHint = 'hint' in error ? String(error.hint ?? '') : '';
+  const combinedText = [errorMessage, errorDetails, errorHint].join(' ').toLowerCase();
+
+  const mentionsColumn = combinedText.includes(columnName.toLowerCase());
+
+  if (!mentionsColumn) {
+    return false;
+  }
+
+  return errorCode === '42703' || errorCode === 'PGRST204';
+}
+
+function toBackendError(error: unknown, fallbackMessage: string) {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    const message = 'message' in error && typeof error.message === 'string' ? error.message : '';
+    const details = 'details' in error && typeof error.details === 'string' ? error.details : '';
+    const hint = 'hint' in error && typeof error.hint === 'string' ? error.hint : '';
+    const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
+
+    const composed = [message, details, hint, code ? `(code ${code})` : '']
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(' • ');
+
+    return new Error(composed || fallbackMessage);
+  }
+
+  return new Error(fallbackMessage);
+}
+
 function formatLabel(dateValue: string) {
   const date = new Date(dateValue);
   if (Number.isNaN(date.getTime())) {
@@ -281,7 +325,7 @@ async function getCurrentUserContext() {
   const lastName = typeof metadata?.last_name === 'string' ? metadata.last_name.trim() : 'Tooloop';
   const avatarUrl = typeof metadata?.avatar_url === 'string' ? metadata.avatar_url : '';
 
-  await client.from('users').upsert(
+  const { error: upsertError } = await client.from('users').upsert(
     {
       id: data.user.id,
       first_name: firstName || 'Utilisateur',
@@ -291,6 +335,10 @@ async function getCurrentUserContext() {
     },
     { onConflict: 'id' }
   );
+
+  if (upsertError) {
+    throw toBackendError(upsertError, 'Profil utilisateur introuvable côté base.');
+  }
 
   return {
     authUserId: data.user.id,
@@ -332,6 +380,7 @@ export async function hydrateBackendData() {
       passesResult,
       messagesResult,
       listingsResult,
+      publicListingsResult,
       trustProfileResult,
       trustCommentsResult,
       storyRowsResult,
@@ -354,6 +403,12 @@ export async function hydrateBackendData() {
         .select('*')
         .eq('user_id', current.authUserId)
         .order('created_at', { ascending: false }),
+      client
+        .from('listings')
+        .select('*')
+        .eq('publication_mode', 'loan')
+        .is('archived_at', null)
+        .order('created_at', { ascending: false }),
       client.from('trust_profiles').select('*').eq('user_id', current.authUserId).maybeSingle(),
       client.from('trust_exchange_comments').select('*').order('created_at', { ascending: false }),
       client.from('object_stories').select('*'),
@@ -365,7 +420,13 @@ export async function hydrateBackendData() {
     ]);
 
     const objectRows = objectsResult.data ?? [];
-    const ownerIds = Array.from(new Set(objectRows.map((item) => item.owner_user_id).filter(Boolean)));
+    const publicListingsRows = publicListingsResult.data ?? [];
+    const ownerIds = Array.from(
+      new Set([
+        ...objectRows.map((item) => item.owner_user_id),
+        ...publicListingsRows.map((item) => item.user_id),
+      ].filter(Boolean))
+    );
     const userRowsResult = ownerIds.length > 0
       ? await client.from('users').select('id, display_name, avatar_url').in('id', ownerIds)
       : { data: [] as { id: string; display_name: string; avatar_url: string | null }[] };
@@ -375,12 +436,13 @@ export async function hydrateBackendData() {
       usersById.set(userItem.id, { display_name: userItem.display_name, avatar_url: userItem.avatar_url });
     });
 
-    DISCOVER_OBJECTS = objectRows.map((item) => ({
+    const discoverFromObjects = objectRows.map((item) => ({
       id: item.id,
       title: item.title,
       description: item.description,
       imageUrl: item.image_url ?? '',
       distanceKm: Number(item.distance_km ?? 0),
+      ownerUserId: item.owner_user_id ?? undefined,
       ownerName: usersById.get(item.owner_user_id)?.display_name ?? 'Voisin',
       responseTime: item.response_time_label ?? '—',
       isPopular: Number(item.loops_completed_snapshot ?? 0) >= 10,
@@ -391,11 +453,50 @@ export async function hydrateBackendData() {
       impactKgCo2: Number(item.impact_kg_co2_snapshot ?? 0),
     }));
 
-    PERSONALIZED_SUGGESTIONS = DISCOVER_OBJECTS.slice(0, 3).map((item, index) => ({
-      id: `suggestion-${item.id}`,
-      objectId: item.id,
-      reason: index === 0 ? 'Très proche de chez toi' : index === 1 ? 'Souvent demandé cette semaine' : 'Bon score de confiance',
-    }));
+    const objectIds = new Set(discoverFromObjects.map((item) => item.id));
+
+    const discoverFromListings = publicListingsRows
+      .filter((item) => !item.object_id || !objectIds.has(item.object_id))
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        imageUrl: item.image_url ?? '',
+        distanceKm: Number(item.distance_km ?? 1.2),
+        ownerUserId: item.user_id ?? undefined,
+        ownerName: usersById.get(item.user_id)?.display_name ?? 'Voisin',
+        responseTime: 'Réponse rapide',
+        isPopular: false,
+        isFree: !Boolean(item.requires_deposit),
+        category: toCategory(item.category),
+        trustScore: 0,
+        loopsCompleted: 0,
+        impactKgCo2: 0,
+      } satisfies DiscoverObject));
+
+    DISCOVER_OBJECTS = [...discoverFromObjects, ...discoverFromListings];
+
+    const suggestionCandidates = DISCOVER_OBJECTS.map((item) => {
+      const reason = item.distanceKm <= 2
+        ? 'Très proche de chez toi'
+        : item.loopsCompleted >= 5
+          ? 'Souvent demandé cette semaine'
+          : item.trustScore >= 80
+            ? 'Bon score de confiance'
+            : null;
+
+      if (!reason) {
+        return null;
+      }
+
+      return {
+        id: `suggestion-${item.id}`,
+        objectId: item.id,
+        reason,
+      } satisfies PersonalizedSuggestion;
+    }).filter(Boolean) as PersonalizedSuggestion[];
+
+    PERSONALIZED_SUGGESTIONS = suggestionCandidates.slice(0, 3);
 
     const loansRows = loansResult.data ?? [];
     const loanUserIds = Array.from(
@@ -450,6 +551,7 @@ export async function hydrateBackendData() {
         publicationMode: item.publication_mode,
         title: item.title,
         description: item.description,
+        photoUri: item.image_url ?? undefined,
         category: toCategory(item.category),
         targetPeriod: item.target_period ?? undefined,
         requiresDeposit: item.requires_deposit ?? undefined,
@@ -463,6 +565,7 @@ export async function hydrateBackendData() {
         publicationMode: item.publication_mode,
         title: item.title,
         description: item.description,
+        photoUri: item.image_url ?? undefined,
         category: toCategory(item.category),
         targetPeriod: item.target_period ?? undefined,
         requiresDeposit: item.requires_deposit ?? undefined,
@@ -602,53 +705,91 @@ export async function refreshBackendData() {
 
 export async function createListing(input: Omit<MyListing, 'id'>) {
   if (!isBackendConfigured) {
-    return null;
+    throw new Error('Backend non configuré. Vérifie les variables Supabase.');
   }
 
   const current = await getCurrentUserContext();
   if (!current) {
-    return null;
+    throw new Error('Session invalide. Reconnecte-toi puis réessaie.');
   }
 
   const client = getSupabaseClient();
-  const { data } = await client
+  const baseInsertPayload = {
+    user_id: current.authUserId,
+    object_id: input.linkedObjectId ?? null,
+    publication_mode: input.publicationMode,
+    title: input.title,
+    description: input.description,
+    category: input.category,
+    target_period: input.targetPeriod ?? null,
+    requires_deposit: input.requiresDeposit ?? null,
+  };
+
+  let insertResult = await client
     .from('listings')
     .insert({
-      user_id: current.authUserId,
-      object_id: input.linkedObjectId ?? null,
-      publication_mode: input.publicationMode,
-      title: input.title,
-      description: input.description,
-      category: input.category,
-      target_period: input.targetPeriod ?? null,
-      requires_deposit: input.requiresDeposit ?? null,
+      ...baseInsertPayload,
+      image_url: input.photoUri ?? null,
     })
     .select('*')
     .single();
 
+  if (insertResult.error && isMissingColumnError(insertResult.error, 'image_url')) {
+    insertResult = await client
+      .from('listings')
+      .insert(baseInsertPayload)
+      .select('*')
+      .single();
+  }
+
+  if (insertResult.error) {
+    throw toBackendError(insertResult.error, 'Publication impossible côté base de données.');
+  }
+
+  if (!insertResult.data) {
+    throw new Error('La publication a échoué sans réponse de la base.');
+  }
+
   await refreshBackendData();
-  return data;
+  return insertResult.data;
 }
 
 export async function updateListingRemote(listingId: string, patch: Partial<Omit<MyListing, 'id'>>) {
   if (!isBackendConfigured) {
-    return;
+    throw new Error('Backend non configuré. Vérifie les variables Supabase.');
   }
 
   const client = getSupabaseClient();
-  await client
+
+  const baseUpdatePayload = {
+    object_id: patch.linkedObjectId ?? undefined,
+    publication_mode: patch.publicationMode,
+    title: patch.title,
+    description: patch.description,
+    category: patch.category,
+    target_period: patch.targetPeriod,
+    requires_deposit: patch.requiresDeposit,
+    updated_at: new Date().toISOString(),
+  };
+
+  let updateResult = await client
     .from('listings')
     .update({
-      object_id: patch.linkedObjectId ?? undefined,
-      publication_mode: patch.publicationMode,
-      title: patch.title,
-      description: patch.description,
-      category: patch.category,
-      target_period: patch.targetPeriod,
-      requires_deposit: patch.requiresDeposit,
-      updated_at: new Date().toISOString(),
+      ...baseUpdatePayload,
+      image_url: patch.photoUri,
     })
     .eq('id', listingId);
+
+  if (updateResult.error && isMissingColumnError(updateResult.error, 'image_url')) {
+    updateResult = await client
+      .from('listings')
+      .update(baseUpdatePayload)
+      .eq('id', listingId);
+  }
+
+  if (updateResult.error) {
+    throw toBackendError(updateResult.error, 'Mise à jour impossible côté base de données.');
+  }
 
   await refreshBackendData();
 }
