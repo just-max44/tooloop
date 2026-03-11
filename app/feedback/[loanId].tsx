@@ -21,8 +21,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { FEEDBACK_CRITERIA, FEEDBACK_IMPACT_LABELS, INBOX_LOANS, PROFILE_USER, useBackendDataVersion } from '@/lib/backend/data';
+import { FEEDBACK_CRITERIA, FEEDBACK_IMPACT_LABELS } from '@/lib/backend/data';
+import { canAccessFeedbackScreen, getExchangeStatusBadge } from '@/lib/domain/exchange-status';
 import { showAppNotice } from '@/stores/app-notice-store';
+import { useBackendStore } from '@/stores/backend-store';
 import {
     isFeedbackSubmitted,
     markFeedbackSubmitted,
@@ -30,7 +32,8 @@ import {
 } from '@/stores/feedback-store';
 
 export default function FeedbackScreen() {
-  useBackendDataVersion();
+  const INBOX_LOANS = useBackendStore((s) => s.inboxLoans);
+  const PROFILE_USER = useBackendStore((s) => s.profileUser);
   const router = useRouter();
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
   const headerHeight = useHeaderHeight();
@@ -42,6 +45,8 @@ export default function FeedbackScreen() {
   const border = useThemeColor({}, 'border');
   const surface = useThemeColor({}, 'surface');
   const tint = useThemeColor({}, 'tint');
+  const softSurface = `${surface}F2`;
+  const softBorder = `${border}AA`;
 
   const [selectedCriteria, setSelectedCriteria] = useState<string[]>([]);
   const [comment, setComment] = useState('');
@@ -54,8 +59,20 @@ export default function FeedbackScreen() {
     }, 650);
   };
 
-  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [loanId]);
+  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [INBOX_LOANS, loanId]);
+  const loanState = useMemo(() => {
+    if (!loan) {
+      return undefined;
+    }
+    return loan.state;
+  }, [loan]);
   const alreadySubmitted = useMemo(() => (loanId ? isFeedbackSubmitted(loanId) : false), [loanId]);
+  const canAccessScreen = useMemo(() => {
+    if (!loanState) {
+      return false;
+    }
+    return canAccessFeedbackScreen(loanState);
+  }, [loanState]);
 
   const totalCriteriaWeight = useMemo(
     () => FEEDBACK_CRITERIA.reduce((acc, criterion) => acc + criterion.weight, 0),
@@ -140,6 +157,27 @@ export default function FeedbackScreen() {
     );
   }
 
+  if (!canAccessScreen) {
+    const statusBadge = getExchangeStatusBadge(loanState ?? 'pending');
+
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>
+        <ThemedView style={styles.container}>
+          <Card style={styles.card}>
+            <ThemedText type="subtitle">Feedback indisponible</ThemedText>
+            <ThemedText style={{ color: mutedText }}>
+              L’évaluation est disponible uniquement après validation complète du retour.
+            </ThemedText>
+            <Badge label={`Statut: ${statusBadge.label}`} variant={statusBadge.variant} />
+            <Button label="Retour Inbox" onPress={() => router.push('/(tabs)/inbox')} />
+          </Card>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
+
+  const statusBadge = getExchangeStatusBadge(loanState ?? 'completed');
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: background }]} edges={['top']}>
       <KeyboardAvoidingView
@@ -158,10 +196,14 @@ export default function FeedbackScreen() {
               <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={tint} colors={[tint]} />
             }>
           <Card style={styles.card}>
-            <ThemedText type="title">Feedback post-prêt</ThemedText>
+            <ThemedText type="label" style={{ color: tint }}>
+              Cloture de l'echange
+            </ThemedText>
+            <ThemedText type="heading">Retour d'experience</ThemedText>
             <ThemedText style={{ color: mutedText }}>
               {loan.objectName} avec {loan.otherUserName}
             </ThemedText>
+            <Badge label={`Statut: ${statusBadge.label}`} variant={statusBadge.variant} />
 
             {alreadySubmitted ? <Badge label="Évaluation déjà envoyée" variant="primary" /> : null}
 
@@ -186,12 +228,13 @@ export default function FeedbackScreen() {
                     accessibilityLabel={criterion.label}
                     accessibilityHint="Ajoute ou retire ce signal de confiance"
                     accessibilityState={{ selected: active }}
-                    style={[
+                    style={({ pressed }) => [
                       styles.criterion,
                       {
-                        borderColor: active ? tint : border,
-                        backgroundColor: active ? `${tint}15` : surface,
+                        borderColor: active ? tint : softBorder,
+                        backgroundColor: active ? `${tint}12` : softSurface,
                       },
+                      pressed ? styles.pressedFeedback : null,
                     ]}>
                     <View style={styles.criterionLeft}>
                       <MaterialIcons
@@ -221,12 +264,14 @@ export default function FeedbackScreen() {
               placeholder="Ex: échange rapide et très respectueux"
               placeholderTextColor={mutedText}
               multiline
-              style={[styles.input, { color: text, borderColor: border, backgroundColor: surface }]}
+              style={[styles.input, { color: text, borderColor: softBorder, backgroundColor: softSurface }]}
             />
             <Button
               label={alreadySubmitted ? 'Évaluation déjà envoyée' : 'Envoyer mon feedback'}
               onPress={submitFeedback}
               disabled={alreadySubmitted || selectedCriteria.length === 0}
+              accessibilityLabel={alreadySubmitted ? 'Evaluation deja envoyee' : 'Envoyer mon feedback'}
+              accessibilityHint="Valide ton evaluation et revient a la liste des echanges"
             />
           </Card>
           </ScrollView>
@@ -251,25 +296,25 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   content: {
-    gap: 12,
+    gap: 14,
     flexGrow: 1,
-    paddingBottom: 16,
+    paddingBottom: 120,
   },
   card: {
-    gap: 10,
+    gap: 12,
   },
   impactRow: {
-    gap: 6,
+    gap: 8,
   },
   criteriaWrap: {
-    gap: 8,
+    gap: 10,
   },
   criterion: {
     borderWidth: 1,
     borderRadius: 12,
-    minHeight: 44,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    minHeight: 46,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -284,9 +329,12 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    minHeight: 108,
+    minHeight: 112,
     textAlignVertical: 'top',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
+  },
+  pressedFeedback: {
+    opacity: 0.88,
   },
 });

@@ -1,31 +1,31 @@
 import { PropsWithChildren, useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Spacing } from '@/constants/theme';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 export function Collapsible({ children, title }: PropsWithChildren & { title: string }) {
   const [isOpen, setIsOpen] = useState(false);
-  const theme = useColorScheme() ?? 'light';
+  const icon = useThemeColor({}, 'icon');
 
   return (
     <View style={styles.wrapper}>
-      <TouchableOpacity
-        style={styles.heading}
+      <Pressable
+        style={({ pressed }) => [styles.heading, pressed && styles.headingPressed]}
         onPress={() => setIsOpen((value) => !value)}
-        activeOpacity={0.8}>
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isOpen }}>
         <IconSymbol
           name="chevron.right"
-          size={18}
+          size={16}
           weight="medium"
-          color={theme === 'light' ? Colors.light.icon : Colors.dark.icon}
+          color={icon}
           style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}
         />
-
         <ThemedText type="defaultSemiBold">{title}</ThemedText>
-      </TouchableOpacity>
+      </Pressable>
       {isOpen ? <View style={styles.content}>{children}</View> : null}
     </View>
   );
@@ -39,12 +39,15 @@ const styles = StyleSheet.create({
   heading: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  headingPressed: {
+    opacity: 0.7,
   },
   content: {
-    marginTop: 6,
+    marginTop: Spacing.sm,
     width: '100%',
-    marginLeft: 0,
     backgroundColor: 'transparent',
   },
 });

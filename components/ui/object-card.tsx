@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Radius } from '@/constants/theme';
+import { Radius, Shadows, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 type ObjectCardProps = {
@@ -51,57 +51,61 @@ export function ObjectCard({
       accessibilityRole="button"
       accessibilityLabel={`Ouvrir ${title}`}
       disabled={!onPress}
-      style={styles.pressable}>
-      <Card style={styles.card}>
+      style={({ pressed }) => [styles.pressable, pressed && styles.pressablePressed]}>
+      <Card padding="none" style={styles.card}>
         <View style={styles.imageWrap}>
           <Image source={{ uri: imageUrl }} style={styles.image} contentFit="cover" />
-          <View style={[styles.topLeftPill, { borderColor: tint, backgroundColor: surface }]}> 
+          <View style={[styles.distancePill, { backgroundColor: surface, ...Shadows.xs }]}>
+            <MaterialIcons name="place" size={13} color={tint} />
             <ThemedText type="defaultSemiBold" style={styles.pillText}>
-              📍 À {distanceKm.toFixed(1)} km
+              {distanceKm.toFixed(1)} km
             </ThemedText>
           </View>
         </View>
 
         <View style={styles.content}>
           <View style={styles.titleBlock}>
-            <ThemedText type="subtitle">{title}</ThemedText>
-            <ThemedText style={{ color: mutedText }}>{description}</ThemedText>
+            <ThemedText type="subtitle" numberOfLines={1}>{title}</ThemedText>
+            <ThemedText type="caption" numberOfLines={2}>{description}</ThemedText>
           </View>
 
           {(typeof trustScore === 'number' || typeof loopsCompleted === 'number') && (
             <View style={styles.signalRow}>
               {typeof trustScore === 'number' ? (
-                <View style={styles.signalItem}>
-                  <MaterialIcons name="verified-user" size={14} color={mutedText} />
-                  <ThemedText style={[styles.signalText, { color: mutedText }]}>Confiance {trustScore}%</ThemedText>
+                <View style={[styles.signalChip, { backgroundColor: `${tint}0C` }]}>
+                  <MaterialIcons name="verified-user" size={13} color={tint} />
+                  <ThemedText style={[styles.signalText, { color: tint }]}>{trustScore}%</ThemedText>
                 </View>
               ) : null}
               {typeof loopsCompleted === 'number' ? (
-                <View style={styles.signalItem}>
-                  <MaterialIcons name="sync" size={14} color={mutedText} />
-                  <ThemedText style={[styles.signalText, { color: mutedText }]}>{loopsCompleted} prêts</ThemedText>
+                <View style={[styles.signalChip, { backgroundColor: `${tint}0C` }]}>
+                  <MaterialIcons name="sync" size={13} color={tint} />
+                  <ThemedText style={[styles.signalText, { color: tint }]}>{loopsCompleted} prêts</ThemedText>
                 </View>
               ) : null}
             </View>
           )}
 
-          <View style={[styles.metaRow, { borderTopColor: border }]}>
-            <View style={styles.ownerRow}>
-              <Pressable
-                onPress={(event) => {
-                  event.stopPropagation();
-                  onOwnerPress?.();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Ouvrir la confiance de ${ownerName}`}>
-                <Avatar name={ownerName} uri={ownerAvatarUrl} size={34} />
-              </Pressable>
-              <View>
-                <ThemedText type="defaultSemiBold">{ownerName}</ThemedText>
-                <ThemedText style={{ color: mutedText, fontSize: 12 }}>Réponse: {responseTime}</ThemedText>
+          <View style={[styles.footer, { borderTopColor: border }]}>
+            <Pressable
+              onPress={(event) => {
+                event.stopPropagation();
+                onOwnerPress?.();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Ouvrir la confiance de ${ownerName}`}
+              style={styles.ownerRow}>
+              <Avatar name={ownerName} uri={ownerAvatarUrl} size={34} />
+              <View style={styles.ownerTextWrap}>
+                <ThemedText type="defaultSemiBold" style={styles.ownerName}>{ownerName}</ThemedText>
+                <ThemedText type="caption">Rép. {responseTime}</ThemedText>
               </View>
-            </View>
-            <Button label={isFree ? 'Emprunter' : 'Demander'} onPress={onBorrowPress} style={styles.actionButton} />
+            </Pressable>
+            <Button
+              label={isFree ? 'Emprunter' : 'Demander'}
+              size="sm"
+              onPress={onBorrowPress}
+            />
           </View>
         </View>
       </Card>
@@ -111,70 +115,82 @@ export function ObjectCard({
 
 const styles = StyleSheet.create({
   pressable: {
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
+  },
+  pressablePressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
   },
   card: {
-    padding: 0,
     overflow: 'hidden',
   },
   imageWrap: {
-    height: 185,
+    height: 180,
     position: 'relative',
   },
   image: {
     width: '100%',
     height: '100%',
   },
-  topLeftPill: {
+  distancePill: {
     position: 'absolute',
-    top: 12,
-    left: 12,
+    top: Spacing.md,
+    left: Spacing.md,
     borderRadius: Radius.full,
-    borderWidth: 2,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: Spacing.xs + 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   pillText: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
   },
   content: {
-    padding: 14,
-    gap: 12,
+    padding: Spacing.lg,
+    gap: Spacing.md,
   },
   titleBlock: {
-    gap: 3,
+    gap: Spacing.xs,
   },
   signalRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: Spacing.sm,
   },
-  signalItem: {
+  signalChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
   },
   signalText: {
     fontSize: 12,
+    fontWeight: '500',
     lineHeight: 16,
   },
-  metaRow: {
-    borderTopWidth: 1,
-    paddingTop: 10,
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: Spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
+    gap: Spacing.sm,
   },
   ownerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: Spacing.sm,
     flex: 1,
   },
-  actionButton: {
-    minHeight: 40,
-    paddingHorizontal: 12,
+  ownerTextWrap: {
+    flex: 1,
+    gap: 1,
+  },
+  ownerName: {
+    fontSize: 14,
   },
 });

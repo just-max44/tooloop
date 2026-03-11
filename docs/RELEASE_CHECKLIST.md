@@ -62,6 +62,20 @@
 - [ ] Soumission Play Console
 - [ ] Soumission App Store Connect
 
+### 8.1) Script E2E smoke (manuel)
+
+- [ ] **Auth**: login, logout, relogin sans erreur visible
+- [ ] **Création objet**: publication d’un objet avec photo + catégorie + mode prêt
+- [ ] **Demande de prêt**: envoi d’une demande depuis un autre compte
+- [ ] **Validation pickup**: preuve de remise validée côté prêteur et emprunteur
+- [ ] **Validation return**: preuve de retour validée côté prêteur et emprunteur
+- [ ] **Clôture échange**: état final `completed` visible dans les deux vues
+- [ ] **Messagerie**: ouverture conversation liée au prêt, envoi/réception d’un message
+- [ ] **Profil**: édition préférences et persistance après relance app
+- [ ] **Erreurs globales**: déclencher une erreur backend simulée et vérifier le bandeau global
+
+Critère de succès: 100% des points ci-dessus passent sur Android et iOS en build `preview`.
+
 ## 9) Bloquants actuels à lever
 
 - [ ] Publier les pages légales via GitHub Pages (`docs/privacy.html` et `docs/terms.html`) puis renseigner les URLs stores

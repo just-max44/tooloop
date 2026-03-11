@@ -1,12 +1,12 @@
 import { Image, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Radius } from '@/constants/theme';
+import { Radius, Shadows } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 type AvatarProps = {
   name: string;
-  uri?: string;
+  uri?: string | null;
   size?: number;
 };
 
@@ -19,7 +19,6 @@ function getInitials(name: string) {
 export function Avatar({ name, uri, size = 40 }: AvatarProps) {
   const border = useThemeColor({}, 'border');
   const tint = useThemeColor({}, 'tint');
-  const surface = useThemeColor({}, 'surface');
 
   return (
     <View
@@ -30,13 +29,16 @@ export function Avatar({ name, uri, size = 40 }: AvatarProps) {
           height: size,
           borderRadius: Radius.full,
           borderColor: border,
-          backgroundColor: surface,
+          backgroundColor: `${tint}14`,
         },
+        size >= 48 && Shadows.xs,
       ]}>
       {uri ? (
         <Image source={{ uri }} style={{ width: size, height: size, borderRadius: Radius.full }} />
       ) : (
-        <ThemedText type="defaultSemiBold" style={{ color: tint, fontSize: Math.max(12, size * 0.35) }}>
+        <ThemedText
+          type="defaultSemiBold"
+          style={{ color: tint, fontSize: Math.max(12, size * 0.36), letterSpacing: 0.5 }}>
           {getInitials(name)}
         </ThemedText>
       )}
@@ -49,6 +51,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
 });

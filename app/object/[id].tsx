@@ -14,9 +14,19 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuthSession } from '@/lib/backend/auth';
-import { DISCOVER_OBJECTS, getObjectImageByLoanObjectName, getObjectStoryById, refreshBackendData, useBackendDataVersion } from '@/lib/backend/data';
+import { getObjectImageByLoanObjectName, getObjectStoryById, refreshBackendData, requestLoanRemote } from '@/lib/backend/data';
+import { showAppNotice } from '@/stores/app-notice-store';
+import { useBackendStore } from '@/stores/backend-store';
 import { getListingById } from '@/stores/listings-store';
 import { getStoryContributionsByObjectId } from '@/stores/object-story-store';
+
+const LOAN_ERROR_MESSAGES: Record<string, string> = {
+  'Object not found': 'Cet objet n\u2019est plus disponible.',
+  'Lender not found': 'Le propri\u00e9taire de cet objet est introuvable.',
+  'Cannot borrow your own object': 'Tu ne peux pas emprunter ton propre objet.',
+  'Loan creation failed': '\u00c9chec de la cr\u00e9ation du pr\u00eat. R\u00e9essaie.',
+  'Invalid payload': 'Donn\u00e9es invalides.',
+};
 
 const DURATIONS = [
   { label: '1 jour', value: '1j' },
@@ -25,7 +35,7 @@ const DURATIONS = [
 ] as const;
 
 export default function ObjectDetailScreen() {
-  useBackendDataVersion();
+  const DISCOVER_OBJECTS = useBackendStore((s) => s.discoverObjects);
   const router = useRouter();
   const { session } = useAuthSession();
   const { id, listingId } = useLocalSearchParams<{ id: string; listingId?: string }>();
@@ -95,7 +105,7 @@ export default function ObjectDetailScreen() {
       imageUrl: matchedImage,
       distanceKm: 1.0,
       ownerName: 'Membre Tooloop',
-      ownerUserId: session?.user?.id,
+      ownerUserId: undefined,
       responseTime: 'quelques heures',
       isFree: !fallbackListing.requiresDeposit,
     };
@@ -173,7 +183,11 @@ export default function ObjectDetailScreen() {
     router.push({ pathname: '/trust', params: { userName, role } });
   };
 
-  const isOwnOffer = Boolean(session?.user?.id && displayItem.ownerUserId && displayItem.ownerUserId === session.user.id);
+  const isOwnOffer = Boolean(
+    session?.user?.id &&
+      displayItem?.ownerUserId &&
+      displayItem.ownerUserId === session.user.id,
+  );
 
   if (!displayItem) {
     return (
@@ -191,12 +205,31 @@ export default function ObjectDetailScreen() {
     );
   }
 
-  const requestLoan = () => {
+  const requestLoan = async () => {
+    if (!displayItem?.ownerUserId || !id) {
+      showAppNotice('Impossible d\u2019envoyer la demande : propriétaire inconnu.', 'error');
+      return;
+    }
+
     setIsSendingRequest(true);
-    setTimeout(() => {
-      setIsSendingRequest(false);
+    try {
+      const durationLabel = selectedDuration === 'other'
+        ? (customDuration.trim() || 'durée personnalisée')
+        : (DURATIONS.find((d) => d.value === selectedDuration)?.label ?? selectedDuration);
+
+      await requestLoanRemote({
+        objectId: id,
+        lenderUserId: displayItem.ownerUserId,
+        dueText: durationLabel,
+      });
       setRequestSubmitted(true);
-    }, 520);
+      showAppNotice('Demande envoyée !', 'success');
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : '';
+      showAppNotice(LOAN_ERROR_MESSAGES[raw] ?? (raw || 'Impossible d\u2019envoyer la demande.'), 'error');
+    } finally {
+      setIsSendingRequest(false);
+    }
   };
 
   return (
@@ -213,6 +246,9 @@ export default function ObjectDetailScreen() {
         }>
         <ThemedView style={styles.page}>
           <Card style={styles.heroCard}>
+            <ThemedText type="label" style={{ color: colors.tint }}>
+              Fiche objet
+            </ThemedText>
             <View style={styles.heroImageWrap}>
               <Image
                 source={heroImageSource}
@@ -221,7 +257,7 @@ export default function ObjectDetailScreen() {
                 onError={() => setHasHeroImageError(true)}
               />
             </View>
-            <ThemedText type="title">{displayItem.title}</ThemedText>
+            <ThemedText type="heading">{displayItem.title}</ThemedText>
             <ThemedText style={[styles.subtitle, { color: mutedText }]}>{displayItem.description}</ThemedText>
 
             <View style={styles.badgesRow}>
@@ -247,7 +283,7 @@ export default function ObjectDetailScreen() {
             </View>
           </Card>
 
-          <Card>
+          <Card variant="filled">
             <ThemedText type="defaultSemiBold">Demande de prêt</ThemedText>
             <View style={styles.durationRow}>
               {DURATIONS.map((durationOption) => {
@@ -256,13 +292,16 @@ export default function ObjectDetailScreen() {
                   <Pressable
                     key={durationOption.value}
                     onPress={() => setSelectedDuration(durationOption.value)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Choisir ${durationOption.label}`}
                     style={[
                       styles.durationPill,
                       {
                         borderColor: isActive ? colors.tint : colors.border,
                         backgroundColor: isActive ? colors.surface : 'transparent',
                       },
-                    ]}>
+                    ]}
+                    hitSlop={6}>
                     <ThemedText
                       type={isActive ? 'defaultSemiBold' : 'default'}
                       style={{ color: isActive ? colors.tint : colors.text }}>
@@ -273,13 +312,16 @@ export default function ObjectDetailScreen() {
               })}
               <Pressable
                 onPress={() => setSelectedDuration('other')}
+                accessibilityRole="button"
+                accessibilityLabel="Choisir une duree personnalisee"
                 style={[
                   styles.durationPill,
                   {
                     borderColor: selectedDuration === 'other' ? colors.tint : colors.border,
                     backgroundColor: selectedDuration === 'other' ? colors.surface : 'transparent',
                   },
-                ]}>
+                ]}
+                hitSlop={6}>
                 <ThemedText
                   type={selectedDuration === 'other' ? 'defaultSemiBold' : 'default'}
                   style={{ color: selectedDuration === 'other' ? colors.tint : colors.text }}>
@@ -294,6 +336,7 @@ export default function ObjectDetailScreen() {
                   value={customDuration}
                   onChangeText={setCustomDuration}
                   placeholder="Ex: 10 jours"
+                  accessibilityLabel="Saisir une duree libre"
                   placeholderTextColor={mutedText}
                   style={[styles.customDurationInput, { color: text, borderColor: colors.border, backgroundColor: colors.surface }]}
                 />
@@ -318,7 +361,7 @@ export default function ObjectDetailScreen() {
               </View>
             ) : (
               <ThemedText style={{ color: mutedText }}>
-                Cette annonce t&apos;appartient déjà.
+                Cette annonce t'appartient déjà.
               </ThemedText>
             )}
           </Card>
@@ -345,7 +388,7 @@ export default function ObjectDetailScreen() {
               <Button
                 label="Voir toute la mini-story"
                 variant="secondary"
-                onPress={() => router.push({ pathname: '/object/story/[id]', params: { id: objectItem.id } })}
+                onPress={() => router.push({ pathname: '/object/story/[id]', params: { id: objectStory.objectId } })}
               />
 
               {storyContributions.length > 0 ? (
@@ -386,7 +429,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: Spacing.xl,
+    paddingBottom: 120,
   },
   page: {
     width: '100%',
@@ -398,6 +441,7 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     gap: Spacing.md,
+    paddingVertical: Spacing.xl,
   },
   heroImageWrap: {
     borderRadius: Radius.md,
@@ -405,7 +449,7 @@ const styles = StyleSheet.create({
   },
   heroImage: {
     width: '100%',
-    height: 210,
+    height: 228,
   },
   subtitle: {
     lineHeight: 20,

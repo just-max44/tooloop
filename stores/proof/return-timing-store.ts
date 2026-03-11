@@ -1,62 +1,24 @@
-import { INBOX_LOANS } from '@/lib/backend/data';
+import { getInboxLoans, getLoanProofState, persistLoanProofStateRemote, setLoanProofStateLocal } from '@/lib/backend/data';
 import { scheduleReturnReminderNotification } from '@/lib/notifications/service';
 
-type PickupAgreement = {
-  returnDateISO: string | null;
-  borrowerAccepted: boolean;
-  pickupAcceptedAtISO: string | null;
-};
-
-type ReturnAgreement = {
-  handbackDateISO: string | null;
-  borrowerAccepted: boolean;
-  lenderCondition: 'conforme' | 'partiel' | 'abime' | null;
-  returnAcceptedAtISO: string | null;
-};
-
-const agreementByLoanId: Record<string, PickupAgreement> = {};
-const returnAgreementByLoanId: Record<string, ReturnAgreement> = {};
-
-function getOrCreateAgreement(loanId: string): PickupAgreement {
-  if (!agreementByLoanId[loanId]) {
-    agreementByLoanId[loanId] = {
-      returnDateISO: null,
-      borrowerAccepted: false,
-      pickupAcceptedAtISO: null,
-    };
-  }
-
-  return agreementByLoanId[loanId];
-}
-
-function getOrCreateReturnAgreement(loanId: string): ReturnAgreement {
-  if (!returnAgreementByLoanId[loanId]) {
-    returnAgreementByLoanId[loanId] = {
-      handbackDateISO: null,
-      borrowerAccepted: false,
-      lenderCondition: null,
-      returnAcceptedAtISO: null,
-    };
-  }
-
-  return returnAgreementByLoanId[loanId];
-}
-
 export function getPickupReturnDateISO(loanId: string) {
-  return getOrCreateAgreement(loanId).returnDateISO;
+  return getLoanProofState(loanId).pickupReturnDateISO;
 }
 
 export function setPickupReturnDateISO(loanId: string, returnDateISO: string) {
-  const previous = getOrCreateAgreement(loanId);
-  const didDateChange = previous.returnDateISO !== returnDateISO;
+  const previous = getLoanProofState(loanId);
+  const didDateChange = previous.pickupReturnDateISO !== returnDateISO;
 
-  agreementByLoanId[loanId] = {
-    returnDateISO,
-    borrowerAccepted: didDateChange ? false : previous.borrowerAccepted,
+  const patch = {
+    pickupReturnDateISO: returnDateISO,
+    borrowerPickupAccepted: didDateChange ? false : previous.borrowerPickupAccepted,
     pickupAcceptedAtISO: didDateChange ? null : previous.pickupAcceptedAtISO,
   };
 
-  const relatedLoan = INBOX_LOANS.find((item) => item.id === loanId);
+  setLoanProofStateLocal(loanId, patch);
+  void persistLoanProofStateRemote(loanId, patch);
+
+  const relatedLoan = getInboxLoans().find((item) => item.id === loanId);
   if (!relatedLoan) {
     return;
   }
@@ -70,16 +32,16 @@ export function setPickupReturnDateISO(loanId: string, returnDateISO: string) {
 }
 
 export function isBorrowerPickupAccepted(loanId: string) {
-  return getOrCreateAgreement(loanId).borrowerAccepted;
+  return getLoanProofState(loanId).borrowerPickupAccepted;
 }
 
 export function setBorrowerPickupAccepted(loanId: string, value: boolean) {
-  const current = getOrCreateAgreement(loanId);
-  agreementByLoanId[loanId] = {
-    ...current,
-    borrowerAccepted: value,
+  const patch = {
+    borrowerPickupAccepted: value,
     pickupAcceptedAtISO: value ? new Date().toISOString() : null,
   };
+  setLoanProofStateLocal(loanId, patch);
+  void persistLoanProofStateRemote(loanId, patch);
 }
 
 export function formatReturnDateLabel(returnDateISO: string) {
@@ -106,48 +68,52 @@ export function getPickupReturnDateLabel(loanId: string) {
 }
 
 export function getReturnHandbackDateISO(loanId: string) {
-  return getOrCreateReturnAgreement(loanId).handbackDateISO;
+  return getLoanProofState(loanId).returnHandbackDateISO;
 }
 
 export function setReturnHandbackDateISO(loanId: string, handbackDateISO: string) {
-  const previous = getOrCreateReturnAgreement(loanId);
-  const didDateChange = previous.handbackDateISO !== handbackDateISO;
+  const previous = getLoanProofState(loanId);
+  const didDateChange = previous.returnHandbackDateISO !== handbackDateISO;
 
-  returnAgreementByLoanId[loanId] = {
-    handbackDateISO,
-    borrowerAccepted: didDateChange ? false : previous.borrowerAccepted,
-    lenderCondition: previous.lenderCondition,
+  const patch = {
+    returnHandbackDateISO: handbackDateISO,
+    borrowerReturnAccepted: didDateChange ? false : previous.borrowerReturnAccepted,
     returnAcceptedAtISO: didDateChange ? null : previous.returnAcceptedAtISO,
   };
+
+  setLoanProofStateLocal(loanId, patch);
+  void persistLoanProofStateRemote(loanId, patch);
 }
 
 export function isBorrowerReturnAccepted(loanId: string) {
-  return getOrCreateReturnAgreement(loanId).borrowerAccepted;
+  return getLoanProofState(loanId).borrowerReturnAccepted;
 }
 
 export function setBorrowerReturnAccepted(loanId: string, value: boolean) {
-  const current = getOrCreateReturnAgreement(loanId);
-  returnAgreementByLoanId[loanId] = {
-    ...current,
-    borrowerAccepted: value,
+  const patch = {
+    borrowerReturnAccepted: value,
     returnAcceptedAtISO: value ? new Date().toISOString() : null,
   };
+  setLoanProofStateLocal(loanId, patch);
+  void persistLoanProofStateRemote(loanId, patch);
 }
 
 export function getReturnCondition(loanId: string) {
-  return getOrCreateReturnAgreement(loanId).lenderCondition;
+  return getLoanProofState(loanId).lenderCondition;
 }
 
 export function setReturnCondition(loanId: string, condition: 'conforme' | 'partiel' | 'abime') {
-  const current = getOrCreateReturnAgreement(loanId);
+  const current = getLoanProofState(loanId);
   const didConditionChange = current.lenderCondition !== condition;
 
-  returnAgreementByLoanId[loanId] = {
-    ...current,
+  const patch = {
     lenderCondition: condition,
-    borrowerAccepted: didConditionChange ? false : current.borrowerAccepted,
+    borrowerReturnAccepted: didConditionChange ? false : current.borrowerReturnAccepted,
     returnAcceptedAtISO: didConditionChange ? null : current.returnAcceptedAtISO,
   };
+
+  setLoanProofStateLocal(loanId, patch);
+  void persistLoanProofStateRemote(loanId, patch);
 }
 
 export function getReturnConditionLabel(loanId: string) {
@@ -177,7 +143,7 @@ export function getReturnHandbackDateLabel(loanId: string) {
 }
 
 export function getPickupAcceptedAtLabel(loanId: string) {
-  const acceptedAtISO = getOrCreateAgreement(loanId).pickupAcceptedAtISO;
+  const acceptedAtISO = getLoanProofState(loanId).pickupAcceptedAtISO;
   if (!acceptedAtISO) {
     return '';
   }
@@ -186,7 +152,7 @@ export function getPickupAcceptedAtLabel(loanId: string) {
 }
 
 export function getReturnAcceptedAtLabel(loanId: string) {
-  const acceptedAtISO = getOrCreateReturnAgreement(loanId).returnAcceptedAtISO;
+  const acceptedAtISO = getLoanProofState(loanId).returnAcceptedAtISO;
   if (!acceptedAtISO) {
     return '';
   }

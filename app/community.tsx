@@ -9,10 +9,12 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { COLLECTIVE_CHALLENGES, DISCOVER_OBJECTS, LOCAL_AREA, refreshBackendData, useBackendDataVersion } from '@/lib/backend/data';
+import { LOCAL_AREA, refreshBackendData } from '@/lib/backend/data';
+import { useBackendStore } from '@/stores/backend-store';
 
 export default function CommunityScreen() {
-  useBackendDataVersion();
+  const COLLECTIVE_CHALLENGES = useBackendStore((s) => s.collectiveChallenges);
+  const DISCOVER_OBJECTS = useBackendStore((s) => s.discoverObjects);
   const router = useRouter();
   const background = useThemeColor({}, 'background');
   const border = useThemeColor({}, 'border');

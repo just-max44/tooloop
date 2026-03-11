@@ -1,6 +1,7 @@
-import { useSyncExternalStore } from 'react';
+import { backendStore, resetBackendStore, useBackendStore } from '@/stores/backend-store';
 
-import { getSupabaseClient, isBackendConfigured } from '@/lib/backend/supabase';
+import { apiRequest, getAccessToken } from '@/lib/backend/custom-api';
+import { isBackendConfigured } from '@/lib/backend/provider';
 
 export type LoanDirection = 'incoming' | 'outgoing';
 export type LoanState = 'pending' | 'accepted' | 'completed' | 'refused';
@@ -63,6 +64,18 @@ export type ExchangeChatMessage = {
   sender: 'me' | 'other' | 'system';
   text: string;
   timeLabel: string;
+};
+
+export type LoanProofState = {
+  pickupValidated: boolean;
+  returnValidated: boolean;
+  pickupReturnDateISO: string | null;
+  returnHandbackDateISO: string | null;
+  lenderCondition: 'conforme' | 'partiel' | 'abime' | null;
+  borrowerPickupAccepted: boolean;
+  borrowerReturnAccepted: boolean;
+  pickupAcceptedAtISO: string | null;
+  returnAcceptedAtISO: string | null;
 };
 
 export type TrustExchangeComment = {
@@ -137,7 +150,7 @@ export const FEEDBACK_CRITERIA: FeedbackCriterion[] = [
   { id: 'respect', label: 'Objet rendu en bon état', weight: 35 },
   { id: 'time', label: 'Respect des délais', weight: 30 },
   { id: 'communication', label: 'Communication claire', weight: 20 },
-  { id: 'courtesy', label: 'Échange agréable', weight: 15 },
+  { id: 'courtesy', label: 'Ã‰change agréable', weight: 15 },
 ];
 
 export const FEEDBACK_IMPACT_LABELS = {
@@ -152,7 +165,7 @@ export const LOCAL_AREA = {
 } as const;
 
 export const TRUST_RANKS_BY_EXCHANGE_RATE = [
-  { id: 'r1', label: 'Étincelle de boucle', minRate: 0 },
+  { id: 'r1', label: 'Ã‰tincelle de boucle', minRate: 0 },
   { id: 'r2', label: 'Pulse de quartier', minRate: 25 },
   { id: 'r3', label: 'Ancre locale', minRate: 50 },
   { id: 'r4', label: 'Moteur collectif', minRate: 75 },
@@ -189,163 +202,104 @@ export const SUCCESS_TAGS: SuccessTag[] = [
     label: 'Réactivité locale',
     conditionType: 'exchange_rate',
     threshold: 70,
-    description: 'Maintenir un bon taux d’échange.',
+    description: 'Maintenir un bon taux dâ€™échange.',
     isHidden: false,
   },
 ];
 
-const listeners = new Set<() => void>();
-let dataVersion = 0;
 let hydrationInFlight = false;
 
-function emit() {
-  dataVersion += 1;
-  listeners.forEach((listener) => listener());
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function getSnapshot() {
-  return dataVersion;
-}
-
+/**
+ * @deprecated Use useBackendStore(s => s.someField) instead.
+ * Kept temporarily for backward compatibility during migration.
+ */
 export function useBackendDataVersion() {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  useBackendStore((s) => s);
 }
 
-export let DISCOVER_OBJECTS: DiscoverObject[] = [];
-export let PERSONALIZED_SUGGESTIONS: PersonalizedSuggestion[] = [];
-export let INBOX_LOANS: LoanPreview[] = [];
-export let PROFILE_STATS = { rating: 0, reviews: 0, objects: 0, loans: 0 };
-export let PROFILE_USER: ProfileUser = { firstName: 'Utilisateur', lastName: 'Tooloop', photoUri: '' };
-export let TRUST_PROFILE_PHOTOS: Record<string, string> = {};
-export let MY_ITEMS: MyListing[] = [];
-export let PAST_PUBLICATIONS: PastPublication[] = [];
-export let TRUST_PROFILE = {
-  level: 'Voisin fiable',
-  trustScore: 0,
-  nextLevelAt: 100,
-  loopsValidated: 0,
-  exchangeRate: 0,
-  activeWeeks: 0,
-  storyContributionsApproved: 0,
-  noIncidentMonths: 0,
-  onTimeReturnRate: 0,
-  responseRate: 0,
-};
-export let TRUST_PROOFS = [
-  { id: 'proof-exchange-rate', label: 'Taux d’échange', value: '0%' },
-  { id: 'proof-loops', label: 'Prêts validés', value: '0' },
-  { id: 'proof-on-time', label: 'Retours à temps', value: '0%' },
-];
-export let TRUST_EXCHANGE_COMMENTS: TrustExchangeComment[] = [];
-export let EXCHANGE_PASSES: ExchangePass[] = [];
-export let EXCHANGE_CHAT_MESSAGES: ExchangeChatMessage[] = [];
-export let OBJECT_STORIES: ObjectStory[] = [];
-export let COLLECTIVE_CHALLENGES: CollectiveChallenge[] = [];
-export let NEIGHBORHOOD_PULSE = {
-  activeNeighbors: 0,
-  loopsThisWeek: 0,
-  co2SavedKgThisWeek: 0,
-};
+// --- State is now in @/stores/backend-store.ts ---
+// Backward-compatible getters (prefer useBackendStore selectors in components)
+function gs() { return backendStore.getState(); }
 
-function toCategory(value: string | null | undefined): (typeof CATEGORIES)[number] {
-  if (value && CATEGORIES.includes(value as (typeof CATEGORIES)[number])) {
-    return value as (typeof CATEGORIES)[number];
-  }
-  return 'Autre';
-}
+export function getDiscoverObjects() { return gs().discoverObjects; }
+export function getPersonalizedSuggestions() { return gs().personalizedSuggestions; }
+export function getInboxLoans() { return gs().inboxLoans; }
+export function getProfileStats() { return gs().profileStats; }
+export function getProfileUser() { return gs().profileUser; }
+export function getTrustProfilePhotos() { return gs().trustProfilePhotos; }
+export function getMyItems() { return gs().myItems; }
+export function getPastPublications() { return gs().pastPublications; }
+export function getTrustProfile() { return gs().trustProfile; }
+export function getTrustProofs() { return gs().trustProofs; }
+export function getTrustExchangeComments_data() { return gs().trustExchangeComments; }
+export function getExchangePasses() { return gs().exchangePasses; }
+export function getExchangeChatMessagesAll() { return gs().exchangeChatMessages; }
+export function getObjectStories_data() { return gs().objectStories; }
+export function getCollectiveChallenges() { return gs().collectiveChallenges; }
+export function getNeighborhoodPulse() { return gs().neighborhoodPulse; }
+export function getLoanProofStateMap() { return gs().loanProofStateByLoanId; }
 
-function isMissingColumnError(error: unknown, columnName: string) {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-
-  const errorCode = 'code' in error ? String(error.code ?? '').toUpperCase() : '';
-  const errorMessage = 'message' in error ? String(error.message ?? '') : '';
-  const errorDetails = 'details' in error ? String(error.details ?? '') : '';
-  const errorHint = 'hint' in error ? String(error.hint ?? '') : '';
-  const combinedText = [errorMessage, errorDetails, errorHint].join(' ').toLowerCase();
-
-  const mentionsColumn = combinedText.includes(columnName.toLowerCase());
-
-  if (!mentionsColumn) {
-    return false;
-  }
-
-  return errorCode === '42703' || errorCode === 'PGRST204';
-}
-
-function toBackendError(error: unknown, fallbackMessage: string) {
-  if (error instanceof Error) {
-    return error;
-  }
-
-  if (error && typeof error === 'object') {
-    const message = 'message' in error && typeof error.message === 'string' ? error.message : '';
-    const details = 'details' in error && typeof error.details === 'string' ? error.details : '';
-    const hint = 'hint' in error && typeof error.hint === 'string' ? error.hint : '';
-    const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
-
-    const composed = [message, details, hint, code ? `(code ${code})` : '']
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .join(' • ');
-
-    return new Error(composed || fallbackMessage);
-  }
-
-  return new Error(fallbackMessage);
-}
-
-function formatLabel(dateValue: string) {
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) {
-    return 'récemment';
-  }
-  return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-}
-
-async function getCurrentUserContext() {
-  if (!isBackendConfigured) {
-    return null;
-  }
-
-  const client = getSupabaseClient();
-  const { data, error } = await client.auth.getUser();
-  if (error || !data.user) {
-    return null;
-  }
-
-  const metadata = data.user.user_metadata as Record<string, unknown> | undefined;
-  const firstName = typeof metadata?.first_name === 'string' ? metadata.first_name.trim() : 'Utilisateur';
-  const lastName = typeof metadata?.last_name === 'string' ? metadata.last_name.trim() : 'Tooloop';
-  const avatarUrl = typeof metadata?.avatar_url === 'string' ? metadata.avatar_url : '';
-
-  const { error: upsertError } = await client.from('users').upsert(
-    {
-      id: data.user.id,
-      first_name: firstName || 'Utilisateur',
-      last_name: lastName || 'Tooloop',
-      avatar_url: avatarUrl || null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'id' }
-  );
-
-  if (upsertError) {
-    throw toBackendError(upsertError, 'Profil utilisateur introuvable côté base.');
-  }
-
-  return {
-    authUserId: data.user.id,
-    firstName: firstName || 'Utilisateur',
-    lastName: lastName || 'Tooloop',
-    avatarUrl,
+type BackendSnapshotPayload = {
+  profileUser: ProfileUser;
+  discoverObjects: DiscoverObject[];
+  personalizedSuggestions: PersonalizedSuggestion[];
+  inboxLoans: LoanPreview[];
+  profileStats: { rating: number; reviews: number; objects: number; loans: number };
+  trustProfilePhotos: Record<string, string>;
+  myItems: MyListing[];
+  pastPublications: PastPublication[];
+  trustProfile: {
+    level: string;
+    trustScore: number;
+    nextLevelAt: number;
+    loopsValidated: number;
+    exchangeRate: number;
+    activeWeeks: number;
+    storyContributionsApproved: number;
+    noIncidentMonths: number;
+    onTimeReturnRate: number;
+    responseRate: number;
   };
+  trustProofs: { id: string; label: string; value: string }[];
+  trustExchangeComments: TrustExchangeComment[];
+  exchangePasses: ExchangePass[];
+  exchangeChatMessages: ExchangeChatMessage[];
+  loanProofStateByLoanId: Record<string, LoanProofState>;
+  objectStories: ObjectStory[];
+  collectiveChallenges: CollectiveChallenge[];
+  neighborhoodPulse: { activeNeighbors: number; loopsThisWeek: number; co2SavedKgThisWeek: number };
+  successTags: SuccessTag[];
+  userSuccesses: string[];
+};
+
+function applySnapshot(payload: BackendSnapshotPayload) {
+  backendStore.setState({
+    profileUser: payload.profileUser,
+    discoverObjects: payload.discoverObjects,
+    personalizedSuggestions: payload.personalizedSuggestions,
+    inboxLoans: payload.inboxLoans,
+    profileStats: payload.profileStats,
+    trustProfilePhotos: payload.trustProfilePhotos,
+    myItems: payload.myItems,
+    pastPublications: payload.pastPublications,
+    trustProfile: payload.trustProfile,
+    trustProofs: payload.trustProofs,
+    trustExchangeComments: payload.trustExchangeComments,
+    exchangePasses: payload.exchangePasses,
+    exchangeChatMessages: payload.exchangeChatMessages,
+    loanProofStateByLoanId: payload.loanProofStateByLoanId ?? {},
+    objectStories: payload.objectStories,
+    collectiveChallenges: payload.collectiveChallenges,
+    neighborhoodPulse: payload.neighborhoodPulse,
+  });
+
+  if (payload.successTags.length > 0) {
+    SUCCESS_TAGS.splice(0, SUCCESS_TAGS.length, ...payload.successTags);
+  }
+}
+
+function resetBackendSnapshots() {
+  resetBackendStore();
 }
 
 export async function hydrateBackendData() {
@@ -357,475 +311,181 @@ export async function hydrateBackendData() {
 
   try {
     if (!isBackendConfigured) {
-      emit();
+      resetBackendSnapshots();
       return;
     }
 
-    const client = getSupabaseClient();
-    const current = await getCurrentUserContext();
-    if (!current) {
-      emit();
+    const token = await getAccessToken();
+    if (!token) {
+      resetBackendSnapshots();
       return;
     }
 
-    PROFILE_USER = {
-      firstName: current.firstName,
-      lastName: current.lastName,
-      photoUri: current.avatarUrl,
-    };
-
-    const [
-      objectsResult,
-      loansResult,
-      passesResult,
-      messagesResult,
-      listingsResult,
-      publicListingsResult,
-      trustProfileResult,
-      trustCommentsResult,
-      storyRowsResult,
-      storyMomentsResult,
-      storyPhotosResult,
-      successTagsResult,
-      userSuccessesResult,
-      feedbacksResult,
-    ] = await Promise.all([
-      client.from('objects').select('*').eq('is_active', true).order('created_at', { ascending: false }),
-      client
-        .from('loans')
-        .select('*')
-        .or(`lender_user_id.eq.${current.authUserId},borrower_user_id.eq.${current.authUserId}`)
-        .order('created_at', { ascending: false }),
-      client.from('exchange_passes').select('*'),
-      client.from('exchange_messages').select('*').order('created_at', { ascending: true }),
-      client
-        .from('listings')
-        .select('*')
-        .eq('user_id', current.authUserId)
-        .order('created_at', { ascending: false }),
-      client
-        .from('listings')
-        .select('*')
-        .eq('publication_mode', 'loan')
-        .is('archived_at', null)
-        .order('created_at', { ascending: false }),
-      client.from('trust_profiles').select('*').eq('user_id', current.authUserId).maybeSingle(),
-      client.from('trust_exchange_comments').select('*').order('created_at', { ascending: false }),
-      client.from('object_stories').select('*'),
-      client.from('object_story_moments').select('*').order('position', { ascending: true }),
-      client.from('object_story_photos').select('*').order('position', { ascending: true }),
-      client.from('success_tags').select('*'),
-      client.from('user_successes').select('*').eq('user_id', current.authUserId),
-      client.from('feedbacks').select('*').eq('target_user_id', current.authUserId),
-    ]);
-
-    const objectRows = objectsResult.data ?? [];
-    const publicListingsRows = publicListingsResult.data ?? [];
-    const ownerIds = Array.from(
-      new Set([
-        ...objectRows.map((item) => item.owner_user_id),
-        ...publicListingsRows.map((item) => item.user_id),
-      ].filter(Boolean))
-    );
-    const userRowsResult = ownerIds.length > 0
-      ? await client.from('users').select('id, display_name, avatar_url').in('id', ownerIds)
-      : { data: [] as { id: string; display_name: string; avatar_url: string | null }[] };
-
-    const usersById = new Map<string, { display_name: string; avatar_url: string | null }>();
-    (userRowsResult.data ?? []).forEach((userItem) => {
-      usersById.set(userItem.id, { display_name: userItem.display_name, avatar_url: userItem.avatar_url });
-    });
-
-    const discoverFromObjects = objectRows.map((item) => ({
-      id: item.id,
-      title: item.title,
-      description: item.description,
-      imageUrl: item.image_url ?? '',
-      distanceKm: Number(item.distance_km ?? 0),
-      ownerUserId: item.owner_user_id ?? undefined,
-      ownerName: usersById.get(item.owner_user_id)?.display_name ?? 'Voisin',
-      responseTime: item.response_time_label ?? '—',
-      isPopular: Number(item.loops_completed_snapshot ?? 0) >= 10,
-      isFree: Boolean(item.is_free),
-      category: toCategory(item.category),
-      trustScore: Number(item.trust_score_snapshot ?? 0),
-      loopsCompleted: Number(item.loops_completed_snapshot ?? 0),
-      impactKgCo2: Number(item.impact_kg_co2_snapshot ?? 0),
-    }));
-
-    const objectIds = new Set(discoverFromObjects.map((item) => item.id));
-
-    const discoverFromListings = publicListingsRows
-      .filter((item) => !item.object_id || !objectIds.has(item.object_id))
-      .map((item) => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        imageUrl: item.image_url ?? '',
-        distanceKm: Number(item.distance_km ?? 1.2),
-        ownerUserId: item.user_id ?? undefined,
-        ownerName: usersById.get(item.user_id)?.display_name ?? 'Voisin',
-        responseTime: 'Réponse rapide',
-        isPopular: false,
-        isFree: !Boolean(item.requires_deposit),
-        category: toCategory(item.category),
-        trustScore: 0,
-        loopsCompleted: 0,
-        impactKgCo2: 0,
-      } satisfies DiscoverObject));
-
-    DISCOVER_OBJECTS = [...discoverFromObjects, ...discoverFromListings];
-
-    const suggestionCandidates = DISCOVER_OBJECTS.map((item) => {
-      const reason = item.distanceKm <= 2
-        ? 'Très proche de chez toi'
-        : item.loopsCompleted >= 5
-          ? 'Souvent demandé cette semaine'
-          : item.trustScore >= 80
-            ? 'Bon score de confiance'
-            : null;
-
-      if (!reason) {
-        return null;
-      }
-
-      return {
-        id: `suggestion-${item.id}`,
-        objectId: item.id,
-        reason,
-      } satisfies PersonalizedSuggestion;
-    }).filter(Boolean) as PersonalizedSuggestion[];
-
-    PERSONALIZED_SUGGESTIONS = suggestionCandidates.slice(0, 3);
-
-    const loansRows = loansResult.data ?? [];
-    const loanUserIds = Array.from(
-      new Set(loansRows.flatMap((loanItem) => [loanItem.lender_user_id, loanItem.borrower_user_id]).filter(Boolean))
-    );
-
-    const loanUsersResult = loanUserIds.length > 0
-      ? await client.from('users').select('id, display_name').in('id', loanUserIds)
-      : { data: [] as { id: string; display_name: string }[] };
-
-    const loanUsersById = new Map<string, string>();
-    (loanUsersResult.data ?? []).forEach((userItem) => {
-      loanUsersById.set(userItem.id, userItem.display_name);
-    });
-
-    const objectsById = new Map(DISCOVER_OBJECTS.map((item) => [item.id, item]));
-
-    INBOX_LOANS = loansRows.map((loanItem) => {
-      const isIncoming = loanItem.borrower_user_id === current.authUserId;
-      const otherUserId = isIncoming ? loanItem.lender_user_id : loanItem.borrower_user_id;
-      return {
-        id: loanItem.id,
-        objectName: objectsById.get(loanItem.object_id)?.title ?? 'Objet',
-        otherUserName: loanUsersById.get(otherUserId) ?? 'Voisin',
-        direction: isIncoming ? 'incoming' : 'outgoing',
-        state: loanItem.state,
-        dueText: loanItem.due_text ?? 'Mise à jour récente',
-      } satisfies LoanPreview;
-    });
-
-    EXCHANGE_PASSES = (passesResult.data ?? []).map((item) => ({
-      loanId: item.loan_id,
-      meetupLabel: item.meetup_label,
-      locationLabel: item.location_label,
-      codeSeed: item.code_seed,
-      verifierCode: item.verifier_code,
-    }));
-
-    EXCHANGE_CHAT_MESSAGES = (messagesResult.data ?? []).map((item) => ({
-      id: item.id,
-      loanId: item.loan_id,
-      sender: item.sender_kind,
-      text: item.text,
-      timeLabel: item.time_label ?? formatLabel(item.created_at),
-    }));
-
-    const listings = listingsResult.data ?? [];
-    MY_ITEMS = listings
-      .filter((item) => !item.archived_at)
-      .map((item) => ({
-        id: item.id,
-        publicationMode: item.publication_mode,
-        title: item.title,
-        description: item.description,
-        photoUri: item.image_url ?? undefined,
-        category: toCategory(item.category),
-        targetPeriod: item.target_period ?? undefined,
-        requiresDeposit: item.requires_deposit ?? undefined,
-        linkedObjectId: item.object_id ?? undefined,
-      }));
-
-    PAST_PUBLICATIONS = listings
-      .filter((item) => Boolean(item.archived_at))
-      .map((item) => ({
-        id: item.id,
-        publicationMode: item.publication_mode,
-        title: item.title,
-        description: item.description,
-        photoUri: item.image_url ?? undefined,
-        category: toCategory(item.category),
-        targetPeriod: item.target_period ?? undefined,
-        requiresDeposit: item.requires_deposit ?? undefined,
-        linkedObjectId: item.object_id ?? undefined,
-        archivedAtLabel: item.archived_at ? formatLabel(item.archived_at) : 'Archivée',
-      }));
-
-    const trust = trustProfileResult.data;
-    if (trust) {
-      TRUST_PROFILE = {
-        level: trust.trust_score >= 80 ? 'Voisin fiable' : trust.trust_score >= 50 ? 'Voisin actif' : 'Nouveau membre',
-        trustScore: trust.trust_score,
-        nextLevelAt: 100,
-        loopsValidated: trust.loops_validated,
-        exchangeRate: trust.exchange_rate,
-        activeWeeks: trust.active_weeks,
-        storyContributionsApproved: trust.story_contributions_approved,
-        noIncidentMonths: 0,
-        onTimeReturnRate: trust.on_time_return_rate,
-        responseRate: trust.response_rate,
-      };
-    }
-
-    TRUST_PROOFS = [
-      { id: 'proof-exchange-rate', label: 'Taux d’échange', value: `${TRUST_PROFILE.exchangeRate}%` },
-      { id: 'proof-loops', label: 'Prêts validés', value: `${TRUST_PROFILE.loopsValidated}` },
-      { id: 'proof-on-time', label: 'Retours à temps', value: `${TRUST_PROFILE.onTimeReturnRate}%` },
-    ];
-
-    TRUST_EXCHANGE_COMMENTS = (trustCommentsResult.data ?? []).map((item) => ({
-      id: item.id,
-      authorName: item.author_name_snapshot,
-      targetUserName: item.target_name_snapshot ?? undefined,
-      loanObjectName: item.loan_object_name_snapshot,
-      comment: item.comment,
-      timeLabel: item.time_label ?? formatLabel(item.created_at),
-    }));
-
-    PROFILE_STATS = {
-      rating: 5,
-      reviews: (feedbacksResult.data ?? []).length,
-      objects: DISCOVER_OBJECTS.filter((item) => item.ownerName === `${PROFILE_USER.firstName} ${PROFILE_USER.lastName}`).length,
-      loans: INBOX_LOANS.length,
-    };
-
-    TRUST_PROFILE_PHOTOS = {
-      [`${PROFILE_USER.firstName} ${PROFILE_USER.lastName}`]: PROFILE_USER.photoUri,
-    };
-    DISCOVER_OBJECTS.forEach((item) => {
-      const owner = usersById.get(objectRows.find((row) => row.id === item.id)?.owner_user_id ?? '');
-      if (owner?.avatar_url) {
-        TRUST_PROFILE_PHOTOS[item.ownerName] = owner.avatar_url;
-      }
-    });
-
-    const storyRows = storyRowsResult.data ?? [];
-    const storyMoments = storyMomentsResult.data ?? [];
-    const storyPhotos = storyPhotosResult.data ?? [];
-
-    OBJECT_STORIES = storyRows.map((storyRow) => {
-      const moments = storyMoments
-        .filter((item) => item.object_story_id === storyRow.id)
-        .map((item) => ({ id: item.id, label: item.label, detail: item.detail }));
-      const photos = storyPhotos
-        .filter((item) => item.object_story_id === storyRow.id)
-        .map((item) => item.photo_url);
-      return {
-        objectId: storyRow.object_id,
-        totalLoans: storyRow.total_loans,
-        badges: [],
-        anecdote: storyRow.anecdote ?? '',
-        moments,
-        photoMemories: photos,
-      };
-    });
-
-    const completedCount = INBOX_LOANS.filter((item) => item.state === 'completed').length;
-    const thisWeekCount = INBOX_LOANS.filter((item) => item.state === 'accepted' || item.state === 'completed').length;
-    NEIGHBORHOOD_PULSE = {
-      activeNeighbors: loanUserIds.length,
-      loopsThisWeek: thisWeekCount,
-      co2SavedKgThisWeek: completedCount * 3,
-    };
-
-    COLLECTIVE_CHALLENGES = [
-      {
-        id: 'challenge-loops',
-        title: 'Boucles validées du quartier',
-        progress: Math.max(thisWeekCount, 0),
-        target: 50,
-        badge: 'Pulse local',
-      },
-      {
-        id: 'challenge-impact',
-        title: 'Impact CO2 cumulé',
-        progress: Math.max(completedCount * 3, 0),
-        target: 200,
-        badge: 'Impact vert',
-      },
-    ];
-
-    const successTags = (successTagsResult.data ?? []).map((item) => ({
-      id: item.id,
-      label: item.label,
-      conditionType: item.condition_type,
-      threshold: item.threshold,
-      description: item.description,
-      isHidden: item.is_hidden,
-    })) as SuccessTag[];
-
-    if (successTags.length > 0) {
-      SUCCESS_TAGS.splice(0, SUCCESS_TAGS.length, ...successTags);
-    }
-
-    const userSuccesses = userSuccessesResult.data ?? [];
-    SUCCESS_TAGS.forEach((tag) => {
-      const match = userSuccesses.find((item) => item.success_tag_id === tag.id);
-      if (!match) {
-        return;
-      }
-      void match;
-    });
-
-    emit();
-  } catch {
-    emit();
+    const payload = await apiRequest<BackendSnapshotPayload>('/v1/data/snapshot');
+    applySnapshot(payload);
+  } catch (error) {
+    console.error('[hydrateBackendData] silent failure:', error);
   } finally {
     hydrationInFlight = false;
   }
 }
 
-void hydrateBackendData();
-
 export async function refreshBackendData() {
   await hydrateBackendData();
 }
 
-export async function createListing(input: Omit<MyListing, 'id'>) {
+const BACKEND_NOT_CONFIGURED_MESSAGE = 'Backend non configuré. Vérifie les variables backend.';
+
+function requireConfiguredBackend() {
   if (!isBackendConfigured) {
-    throw new Error('Backend non configuré. Vérifie les variables Supabase.');
+    throw new Error(BACKEND_NOT_CONFIGURED_MESSAGE);
   }
+}
 
-  const current = await getCurrentUserContext();
-  if (!current) {
-    throw new Error('Session invalide. Reconnecte-toi puis réessaie.');
-  }
-
-  const client = getSupabaseClient();
-  const baseInsertPayload = {
-    user_id: current.authUserId,
-    object_id: input.linkedObjectId ?? null,
-    publication_mode: input.publicationMode,
-    title: input.title,
-    description: input.description,
-    category: input.category,
-    target_period: input.targetPeriod ?? null,
-    requires_deposit: input.requiresDeposit ?? null,
-  };
-
-  let insertResult = await client
-    .from('listings')
-    .insert({
-      ...baseInsertPayload,
-      image_url: input.photoUri ?? null,
-    })
-    .select('*')
-    .single();
-
-  if (insertResult.error && isMissingColumnError(insertResult.error, 'image_url')) {
-    insertResult = await client
-      .from('listings')
-      .insert(baseInsertPayload)
-      .select('*')
-      .single();
-  }
-
-  if (insertResult.error) {
-    throw toBackendError(insertResult.error, 'Publication impossible côté base de données.');
-  }
-
-  if (!insertResult.data) {
-    throw new Error('La publication a échoué sans réponse de la base.');
-  }
-
+export async function createListing(input: Omit<MyListing, 'id'>) {
+  requireConfiguredBackend();
+  const payload = await apiRequest<{ id: string }>('/v1/data/listings', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
   await refreshBackendData();
-  return insertResult.data;
+  return payload;
 }
 
 export async function updateListingRemote(listingId: string, patch: Partial<Omit<MyListing, 'id'>>) {
-  if (!isBackendConfigured) {
-    throw new Error('Backend non configuré. Vérifie les variables Supabase.');
-  }
-
-  const client = getSupabaseClient();
-
-  const baseUpdatePayload = {
-    object_id: patch.linkedObjectId ?? undefined,
-    publication_mode: patch.publicationMode,
-    title: patch.title,
-    description: patch.description,
-    category: patch.category,
-    target_period: patch.targetPeriod,
-    requires_deposit: patch.requiresDeposit,
-    updated_at: new Date().toISOString(),
-  };
-
-  let updateResult = await client
-    .from('listings')
-    .update({
-      ...baseUpdatePayload,
-      image_url: patch.photoUri,
-    })
-    .eq('id', listingId);
-
-  if (updateResult.error && isMissingColumnError(updateResult.error, 'image_url')) {
-    updateResult = await client
-      .from('listings')
-      .update(baseUpdatePayload)
-      .eq('id', listingId);
-  }
-
-  if (updateResult.error) {
-    throw toBackendError(updateResult.error, 'Mise à jour impossible côté base de données.');
-  }
-
+  requireConfiguredBackend();
+  await apiRequest(`/v1/data/listings/${listingId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
   await refreshBackendData();
 }
 
 export async function removeListingRemote(listingId: string) {
-  if (!isBackendConfigured) {
+  requireConfiguredBackend();
+  await apiRequest(`/v1/data/listings/${listingId}`, {
+    method: 'DELETE',
+  });
+  await refreshBackendData();
+}
+
+export async function requestLoanRemote(input: {
+  objectId: string;
+  lenderUserId: string;
+  dueText: string;
+}) {
+  requireConfiguredBackend();
+  const payload = await apiRequest<{ id: string }>('/v1/data/loans', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  await refreshBackendData();
+  return payload;
+}
+
+export async function setLoanStateRemote(loanId: string, state: LoanState) {
+  requireConfiguredBackend();
+  await apiRequest(`/v1/data/loans/${loanId}/state`, {
+    method: 'PATCH',
+    body: JSON.stringify({ state }),
+  });
+  await refreshBackendData();
+}
+
+export async function sendExchangeMessageRemote(loanId: string, text: string) {
+  const normalized = text.trim();
+  if (!normalized) {
     return;
   }
 
-  const client = getSupabaseClient();
-  await client.from('listings').delete().eq('id', listingId);
+  requireConfiguredBackend();
+  await apiRequest(`/v1/data/loans/${loanId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ text: normalized }),
+  });
   await refreshBackendData();
 }
 
 export function getExchangePassByLoanId(loanId: string) {
-  return EXCHANGE_PASSES.find((item) => item.loanId === loanId);
+  return gs().exchangePasses.find((item) => item.loanId === loanId);
 }
 
 export function getObjectStoryById(objectId: string) {
-  return OBJECT_STORIES.find((item) => item.objectId === objectId);
+  return gs().objectStories.find((item) => item.objectId === objectId);
+}
+
+function getDefaultLoanProofState(): LoanProofState {
+  return {
+    pickupValidated: false,
+    returnValidated: false,
+    pickupReturnDateISO: null,
+    returnHandbackDateISO: null,
+    lenderCondition: null,
+    borrowerPickupAccepted: false,
+    borrowerReturnAccepted: false,
+    pickupAcceptedAtISO: null,
+    returnAcceptedAtISO: null,
+  };
+}
+
+export function getLoanProofState(loanId: string): LoanProofState {
+  const map = gs().loanProofStateByLoanId;
+  if (!map[loanId]) {
+    const def = getDefaultLoanProofState();
+    backendStore.setState((s) => ({
+      loanProofStateByLoanId: { ...s.loanProofStateByLoanId, [loanId]: def },
+    }));
+    return def;
+  }
+
+  return map[loanId];
+}
+
+export function setLoanProofStateLocal(loanId: string, patch: Partial<LoanProofState>) {
+  const current = getLoanProofState(loanId);
+  backendStore.setState((s) => ({
+    loanProofStateByLoanId: {
+      ...s.loanProofStateByLoanId,
+      [loanId]: { ...current, ...patch },
+    },
+  }));
+}
+
+export async function persistLoanProofStateRemote(loanId: string, patch: Partial<LoanProofState>) {
+  requireConfiguredBackend();
+  await apiRequest(`/v1/data/loans/${loanId}/proof-state`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+  await refreshBackendData();
 }
 
 export function getExchangeMessagesByLoanId(loanId: string) {
-  return EXCHANGE_CHAT_MESSAGES.filter((item) => item.loanId === loanId);
+  return gs().exchangeChatMessages.filter((item) => item.loanId === loanId);
+}
+
+export async function loadOlderMessages(loanId: string, beforeId?: string): Promise<{ messages: ExchangeChatMessage[]; hasMore: boolean }> {
+  requireConfiguredBackend();
+  const params = new URLSearchParams({ limit: '50' });
+  if (beforeId) {
+    params.set('before', beforeId);
+  }
+  const result = await apiRequest<{ messages: ExchangeChatMessage[]; hasMore: boolean }>(
+    `/v1/data/loans/${loanId}/messages?${params.toString()}`
+  );
+  return result;
 }
 
 export function getObjectImageByLoanObjectName(objectName: string) {
-  return DISCOVER_OBJECTS.find((item) => item.title.trim().toLowerCase() === objectName.trim().toLowerCase())?.imageUrl;
+  return gs().discoverObjects.find((item) => item.title.trim().toLowerCase() === objectName.trim().toLowerCase())?.imageUrl;
 }
 
 export function getObjectByLoanObjectName(objectName: string) {
-  return DISCOVER_OBJECTS.find((item) => item.title.trim().toLowerCase() === objectName.trim().toLowerCase());
+  return gs().discoverObjects.find((item) => item.title.trim().toLowerCase() === objectName.trim().toLowerCase());
 }
 
 export function getProfilePhotoUriByName(userName: string) {
-  return TRUST_PROFILE_PHOTOS[userName] ?? PROFILE_USER.photoUri;
+  return gs().trustProfilePhotos[userName] ?? gs().profileUser.photoUri;
 }
 
 export function getTrustRankByExchangeRate(exchangeRate: number) {
@@ -840,7 +500,7 @@ export function getTrustRankByFinalizedExchanges(finalizedExchanges: number) {
     .find((item) => finalizedExchanges >= item.minCount);
 }
 
-export function getSuccessTagsStatus(profile = TRUST_PROFILE) {
+export function getSuccessTagsStatus(profile = gs().trustProfile) {
   return SUCCESS_TAGS.map((tag) => {
     let progressPercent = 0;
 

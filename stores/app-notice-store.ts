@@ -36,6 +36,11 @@ export function useAppNotice() {
 }
 
 export function hideAppNotice() {
+  if (hideTimeout) {
+    clearTimeout(hideTimeout);
+    hideTimeout = null;
+  }
+
   if (!state.visible) {
     return;
   }
@@ -43,11 +48,19 @@ export function hideAppNotice() {
   state = {
     ...state,
     visible: false,
+    message: '',
+    tone: 'info',
   };
   emit();
 }
 
 export function showAppNotice(message: string, tone: AppNoticeTone = 'info', durationMs = 2600) {
+  const normalizedMessage = message.trim();
+
+  if (!normalizedMessage) {
+    return;
+  }
+
   if (hideTimeout) {
     clearTimeout(hideTimeout);
     hideTimeout = null;
@@ -55,12 +68,26 @@ export function showAppNotice(message: string, tone: AppNoticeTone = 'info', dur
 
   state = {
     visible: true,
-    message,
+    message: normalizedMessage,
     tone,
   };
   emit();
 
-  hideTimeout = setTimeout(() => {
-    hideAppNotice();
-  }, durationMs);
+  if (durationMs > 0) {
+    hideTimeout = setTimeout(() => {
+      hideAppNotice();
+    }, durationMs);
+  }
+}
+
+function toErrorNoticeMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return fallbackMessage;
+}
+
+export function showAppErrorNotice(error: unknown, fallbackMessage = 'Une erreur est survenue.') {
+  showAppNotice(toErrorNoticeMessage(error, fallbackMessage), 'error');
 }

@@ -1,26 +1,45 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useState } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
-import { Radius, Shadows } from '@/constants/theme';
+import { Radius, Shadows, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 type SearchBarProps = TextInputProps;
 
 export function SearchBar(props: SearchBarProps) {
-  const surface = useThemeColor({}, 'surface');
+  const surfaceRaised = useThemeColor({}, 'surfaceRaised');
   const border = useThemeColor({}, 'border');
+  const borderSubtle = useThemeColor({}, 'borderSubtle');
   const text = useThemeColor({}, 'text');
   const mutedText = useThemeColor({}, 'mutedText');
   const tint = useThemeColor({}, 'tint');
+  const [isFocused, setIsFocused] = useState(false);
 
   return (
-    <View style={[styles.container, { backgroundColor: surface, borderColor: border }]}>
-      <MaterialIcons name="search" size={20} color={tint} />
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: surfaceRaised,
+          borderColor: isFocused ? tint : borderSubtle,
+          borderWidth: isFocused ? 1.5 : 1,
+        },
+      ]}>
+      <MaterialIcons name="search" size={20} color={isFocused ? tint : mutedText} />
       <TextInput
         accessibilityLabel={props.accessibilityLabel ?? 'Barre de recherche'}
         placeholderTextColor={mutedText}
         style={[styles.input, { color: text }]}
         returnKeyType="search"
+        onFocus={(e) => {
+          setIsFocused(true);
+          props.onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setIsFocused(false);
+          props.onBlur?.(e);
+        }}
         {...props}
       />
     </View>
@@ -29,14 +48,13 @@ export function SearchBar(props: SearchBarProps) {
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: 48,
+    minHeight: 52,
     borderRadius: Radius.md,
-    borderWidth: 1,
-    paddingHorizontal: 12,
+    paddingHorizontal: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    ...Shadows.card,
+    gap: Spacing.sm,
+    ...Shadows.xs,
   },
   input: {
     flex: 1,

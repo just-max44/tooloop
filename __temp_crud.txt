@@ -1,0 +1,57 @@
+export async function createListing(input: Omit<MyListing, 'id'>) {
+  const payload = await apiRequest<{ id: string }>('/v1/data/listings', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  await refreshBackendData();
+  return payload;
+}
+
+export async function updateListingRemote(listingId: string, patch: Partial<Omit<MyListing, 'id'>>) {
+  await apiRequest(`/v1/data/listings/${listingId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+  await refreshBackendData();
+}
+
+export async function removeListingRemote(listingId: string) {
+  await apiRequest(`/v1/data/listings/${listingId}`, {
+    method: 'DELETE',
+  });
+  await refreshBackendData();
+}
+
+export async function requestLoanRemote(input: {
+  objectId: string;
+  lenderUserId: string;
+  dueText: string;
+}) {
+  const payload = await apiRequest<{ id: string }>('/v1/data/loans', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  await refreshBackendData();
+  return payload;
+}
+
+export async function setLoanStateRemote(loanId: string, state: LoanState) {
+  await apiRequest(`/v1/data/loans/${loanId}/state`, {
+    method: 'PATCH',
+    body: JSON.stringify({ state }),
+  });
+  await refreshBackendData();
+}
+
+export async function sendExchangeMessageRemote(loanId: string, text: string) {
+  const normalized = text.trim();
+  if (!normalized) {
+    return;
+  }
+
+  await apiRequest(`/v1/data/loans/${loanId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ text: normalized }),
+  });
+  await refreshBackendData();
+}

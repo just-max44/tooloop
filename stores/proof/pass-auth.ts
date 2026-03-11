@@ -8,36 +8,45 @@ export type ExchangeQrPayload = {
   loanId: string;
   step: ExchangeStep;
   verifierCode: string;
-  codeSeed: string;
+  signature: string;
 };
-
-function hashSeed(seed: string) {
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) & 0xffffffff;
-  }
-  return Math.abs(hash);
-}
 
 function buildStepSeed(seed: string, step: ExchangeStep) {
   return `${seed}-${step.toUpperCase()}`;
 }
 
+/**
+ * Derive a verifier code from the codeSeed + step.
+ * Uses a stronger hash (FNV-1a 32-bit) producing an 8-char hex code.
+ */
+function fnv1aHash(input: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 export function getStepVerifierCode(seed: string, step: ExchangeStep) {
   const stepSeed = buildStepSeed(seed, step);
-  const hashed = hashSeed(stepSeed);
-  const base36 = hashed.toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return base36.padEnd(4, '0').slice(0, 4);
+  const hash = fnv1aHash(stepSeed);
+  return hash.toString(16).toUpperCase().padStart(8, '0');
 }
 
 export function getStepQrPayload(pass: ExchangePass, step: ExchangeStep): ExchangeQrPayload {
+  const verifierCode = getStepVerifierCode(pass.codeSeed, step);
+  // Signature = second hash combining loanId + verifierCode + seed for tamper detection
+  const rawSignature = `${pass.loanId}:${verifierCode}:${pass.codeSeed}`;
+  const signature = fnv1aHash(rawSignature).toString(16).toUpperCase().padStart(8, '0');
+
   return {
     type: 'tooloop-pass-step',
     version: 1,
     loanId: pass.loanId,
     step,
-    verifierCode: getStepVerifierCode(pass.codeSeed, step),
-    codeSeed: buildStepSeed(pass.codeSeed, step),
+    verifierCode,
+    signature,
   };
 }
 
@@ -53,6 +62,17 @@ export function isExchangeQrPayload(value: unknown): value is ExchangeQrPayload 
     (payload.step === 'pickup' || payload.step === 'return') &&
     typeof payload.loanId === 'string' &&
     typeof payload.verifierCode === 'string' &&
-    typeof payload.codeSeed === 'string'
+    typeof payload.signature === 'string'
   );
+}
+
+export function validateQrPayload(payload: ExchangeQrPayload, pass: ExchangePass): boolean {
+  const expectedCode = getStepVerifierCode(pass.codeSeed, payload.step);
+  if (payload.verifierCode !== expectedCode) {
+    return false;
+  }
+
+  const rawSignature = `${payload.loanId}:${payload.verifierCode}:${pass.codeSeed}`;
+  const expectedSignature = fnv1aHash(rawSignature).toString(16).toUpperCase().padStart(8, '0');
+  return payload.signature === expectedSignature;
 }

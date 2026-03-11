@@ -1,4 +1,4 @@
-import { TRUST_EXCHANGE_COMMENTS, type TrustExchangeComment } from '@/lib/backend/data';
+import { getTrustExchangeComments_data, type TrustExchangeComment } from '@/lib/backend/data';
 
 const feedbackSubmittedByLoanId: Record<string, boolean> = {};
 const trustCommentsBySourceKey: Record<string, TrustExchangeComment> = {};
@@ -35,7 +35,7 @@ export function upsertTrustExchangeComment(input: {
 }
 
 export function getTrustExchangeComments(targetUserName?: string) {
-  const merged = [...Object.values(trustCommentsBySourceKey), ...TRUST_EXCHANGE_COMMENTS];
+  const merged = [...Object.values(trustCommentsBySourceKey), ...getTrustExchangeComments_data()];
   if (!targetUserName?.trim()) {
     return merged;
   }

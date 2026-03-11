@@ -1,37 +1,24 @@
+import { getLoanProofState, persistLoanProofStateRemote, setLoanProofStateLocal } from '@/lib/backend/data';
+
 type ProofProgress = {
   pickupValidated: boolean;
   returnValidated: boolean;
 };
 
-const progressByLoanId: Record<string, ProofProgress> = {};
-
-function getOrCreateProgress(loanId: string): ProofProgress {
-  if (!progressByLoanId[loanId]) {
-    progressByLoanId[loanId] = {
-      pickupValidated: false,
-      returnValidated: false,
-    };
-  }
-
-  return progressByLoanId[loanId];
-}
-
 export function getProofProgress(loanId: string): ProofProgress {
-  return getOrCreateProgress(loanId);
+  const state = getLoanProofState(loanId);
+  return {
+    pickupValidated: state.pickupValidated,
+    returnValidated: state.returnValidated,
+  };
 }
 
 export function setPickupValidated(loanId: string, value: boolean) {
-  const current = getOrCreateProgress(loanId);
-  progressByLoanId[loanId] = {
-    ...current,
-    pickupValidated: value,
-  };
+  setLoanProofStateLocal(loanId, { pickupValidated: value });
+  void persistLoanProofStateRemote(loanId, { pickupValidated: value });
 }
 
 export function setReturnValidated(loanId: string, value: boolean) {
-  const current = getOrCreateProgress(loanId);
-  progressByLoanId[loanId] = {
-    ...current,
-    returnValidated: value,
-  };
+  setLoanProofStateLocal(loanId, { returnValidated: value });
+  void persistLoanProofStateRemote(loanId, { returnValidated: value });
 }

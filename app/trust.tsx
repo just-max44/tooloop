@@ -16,16 +16,15 @@ import { useAuthSession } from '@/lib/backend/auth';
 import {
     getProfilePhotoUriByName,
     getSuccessTagsStatus,
-    PROFILE_USER,
     refreshBackendData,
-    TRUST_PROFILE,
-    TRUST_PROOFS,
-    useBackendDataVersion,
 } from '@/lib/backend/data';
+import { useBackendStore } from '@/stores/backend-store';
 import { getTrustExchangeComments } from '@/stores/feedback-store';
 
 export default function TrustScreen() {
-  useBackendDataVersion();
+  const PROFILE_USER = useBackendStore((s) => s.profileUser);
+  const TRUST_PROFILE = useBackendStore((s) => s.trustProfile);
+  const TRUST_PROOFS = useBackendStore((s) => s.trustProofs);
   const { session } = useAuthSession();
   const { userName } = useLocalSearchParams<{ userName?: string }>();
   const tint = useThemeColor({}, 'tint');

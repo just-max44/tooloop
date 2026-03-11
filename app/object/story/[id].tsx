@@ -12,11 +12,12 @@ import { Card } from '@/components/ui/card';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { DISCOVER_OBJECTS, getObjectStoryById, useBackendDataVersion } from '@/lib/backend/data';
+import { getObjectStoryById } from '@/lib/backend/data';
+import { useBackendStore } from '@/stores/backend-store';
 import { getStoryContributionsByObjectId } from '@/stores/object-story-store';
 
 export default function ObjectStoryScreen() {
-  useBackendDataVersion();
+  const DISCOVER_OBJECTS = useBackendStore((s) => s.discoverObjects);
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
 

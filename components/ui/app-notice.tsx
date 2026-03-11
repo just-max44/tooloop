@@ -2,7 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Radius } from '@/constants/theme';
+import { Radius, Shadows, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { hideAppNotice, useAppNotice } from '@/stores/app-notice-store';
 
@@ -10,7 +10,8 @@ export function AppNotice() {
   const notice = useAppNotice();
 
   const tint = useThemeColor({}, 'tint');
-  const border = useThemeColor({}, 'border');
+  const success = useThemeColor({}, 'success');
+  const warning = useThemeColor({}, 'warning');
   const text = useThemeColor({}, 'text');
   const surface = useThemeColor({}, 'surface');
   const danger = useThemeColor({}, 'danger');
@@ -23,9 +24,9 @@ export function AppNotice() {
     notice.tone === 'error'
       ? danger
       : notice.tone === 'success'
-        ? tint
+        ? success
         : notice.tone === 'warning'
-          ? tint
+          ? warning
           : tint;
 
   const iconName =
@@ -43,10 +44,16 @@ export function AppNotice() {
         onPress={hideAppNotice}
         accessibilityRole="button"
         accessibilityLabel="Fermer le message"
-        style={[styles.card, { borderColor: border, backgroundColor: surface }]}
+        style={[
+          styles.card,
+          { borderColor: `${toneColor}44`, backgroundColor: surface, borderLeftColor: toneColor },
+        ]}
       >
-        <MaterialIcons name={iconName} size={18} color={toneColor} />
-        <ThemedText style={{ color: text, flex: 1, fontSize: 13 }}>{notice.message}</ThemedText>
+        <View style={[styles.iconWrap, { backgroundColor: `${toneColor}14` }]}>
+          <MaterialIcons name={iconName} size={16} color={toneColor} />
+        </View>
+        <ThemedText style={[styles.message, { color: text }]}>{notice.message}</ThemedText>
+        <MaterialIcons name="close" size={16} color={toneColor} />
       </Pressable>
     </View>
   );
@@ -58,17 +65,31 @@ const styles = StyleSheet.create({
     top: 10,
     left: 0,
     right: 0,
-    paddingHorizontal: 16,
+    paddingHorizontal: Spacing.lg,
     zIndex: 100,
   },
   card: {
     borderWidth: 1,
-    borderRadius: Radius.md,
-    minHeight: 44,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderLeftWidth: 3,
+    borderRadius: Radius.sm,
+    minHeight: 48,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: Spacing.sm,
+    ...Shadows.md,
+  },
+  iconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  message: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

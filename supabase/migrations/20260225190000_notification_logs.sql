@@ -1,3 +1,0 @@
--- Compatibility migration kept to match remote migration history.
--- This migration was previously applied on remote environments.
--- Intentionally left as a no-op.

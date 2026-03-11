@@ -7,10 +7,11 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { AppNotice } from '@/components/ui/app-notice';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthSession } from '@/lib/backend/auth';
-import { initializeSupabaseAuthLifecycle } from '@/lib/backend/supabase';
+import { refreshBackendData } from '@/lib/backend/data';
 import { promptNotificationPermissionOnFirstLogin } from '@/lib/notifications/service';
 
 export const unstable_settings = {
@@ -43,10 +44,6 @@ export default function RootLayout() {
   }, [resolvedTheme]);
 
   useEffect(() => {
-    initializeSupabaseAuthLifecycle();
-  }, []);
-
-  useEffect(() => {
     const userId = session?.user?.id;
     if (!userId) {
       return;
@@ -54,6 +51,14 @@ export default function RootLayout() {
 
     promptNotificationPermissionOnFirstLogin(userId).catch(() => {});
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (isLoading || !isBackendConfigured) {
+      return;
+    }
+
+    refreshBackendData().catch(() => {});
+  }, [isBackendConfigured, isLoading, session?.user?.id]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -80,6 +85,7 @@ export default function RootLayout() {
   }, [isBackendConfigured, isLoading, pathname, router, session]);
 
   return (
+    <ErrorBoundary>
     <ThemeProvider value={navigationTheme}>
       <Stack
         screenOptions={{
@@ -178,5 +184,6 @@ export default function RootLayout() {
       />
       <AppNotice />
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }

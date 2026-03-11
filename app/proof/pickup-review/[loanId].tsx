@@ -12,16 +12,17 @@ import { Card } from '@/components/ui/card';
 import { Radius } from '@/constants/theme';
 import { useProofBackToInbox } from '@/hooks/use-proof-back-to-inbox';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { getObjectImageByLoanObjectName, INBOX_LOANS, useBackendDataVersion } from '@/lib/backend/data';
-import { setPickupValidated } from '@/stores/proof/progress-store';
+import { getObjectImageByLoanObjectName } from '@/lib/backend/data';
+import { useBackendStore } from '@/stores/backend-store';
 import {
     getPickupReturnDateLabel,
     isBorrowerPickupAccepted,
     setBorrowerPickupAccepted,
-} from '@/stores/proof/return-timing-store';
+    setPickupValidated,
+} from '@/stores/proof';
 
 export default function PickupReviewScreen() {
-  useBackendDataVersion();
+  const INBOX_LOANS = useBackendStore((s) => s.inboxLoans);
   const router = useRouter();
   const { loanId, as } = useLocalSearchParams<{ loanId: string; as?: string }>();
   useProofBackToInbox();
@@ -31,11 +32,13 @@ export default function PickupReviewScreen() {
   const border = useThemeColor({}, 'border');
   const surface = useThemeColor({}, 'surface');
   const tint = useThemeColor({}, 'tint');
+  const softSurface = `${surface}F2`;
+  const softBorder = `${border}AA`;
 
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [loanId]);
+  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [INBOX_LOANS, loanId]);
   const isBorrower = as === 'borrower' || loan?.direction === 'incoming';
   const alreadyAccepted = loanId ? isBorrowerPickupAccepted(loanId) : false;
   const returnDateLabel = loanId ? getPickupReturnDateLabel(loanId) : '';
@@ -88,7 +91,7 @@ export default function PickupReviewScreen() {
             {objectImageUri ? (
               <Image source={{ uri: objectImageUri }} style={styles.objectPhoto} contentFit="cover" />
             ) : (
-              <View style={[styles.photoFallback, { borderColor: border, backgroundColor: surface }]}>
+              <View style={[styles.photoFallback, { borderColor: softBorder, backgroundColor: softSurface }]}>
                 <MaterialIcons name="image" size={22} color={mutedText} />
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>Photo indisponible</ThemedText>
               </View>
@@ -115,7 +118,11 @@ export default function PickupReviewScreen() {
           {!alreadyAccepted ? (
             <Card style={styles.card}>
               <Pressable
-                style={[styles.checkItem, { borderColor: border, backgroundColor: surface }]}
+                style={({ pressed }) => [
+                  styles.checkItem,
+                  { borderColor: softBorder, backgroundColor: softSurface },
+                  pressed ? styles.pressedFeedback : null,
+                ]}
                 onPress={() => setAcknowledged((value) => !value)}
                 accessibilityRole="checkbox"
                 accessibilityLabel="Confirmer la prise de connaissance"
@@ -140,7 +147,7 @@ export default function PickupReviewScreen() {
 
           {alreadyAccepted || submitted ? (
             <Card style={styles.card}>
-              <View style={[styles.successBox, { borderColor: `${tint}66`, backgroundColor: `${tint}16` }]}>
+              <View style={[styles.successBox, { borderColor: `${tint}66`, backgroundColor: `${tint}12` }]}>
                 <ThemedText type="defaultSemiBold">✅ Remise acceptée</ThemedText>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>
                   Le prêteur reçoit maintenant la confirmation dans son pass d’échange.
@@ -170,11 +177,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   content: {
-    gap: 12,
-    paddingBottom: 16,
+    gap: 14,
+    paddingBottom: 20,
   },
   card: {
-    gap: 10,
+    gap: 12,
   },
   objectPhoto: {
     width: '100%',
@@ -191,13 +198,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   infoRow: {
-    gap: 3,
+    gap: 4,
   },
   checkItem: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    minHeight: 44,
-    paddingHorizontal: 12,
+    minHeight: 46,
+    paddingHorizontal: 13,
     justifyContent: 'center',
   },
   checkLeft: {
@@ -208,7 +215,10 @@ const styles = StyleSheet.create({
   successBox: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    padding: 10,
-    gap: 8,
+    padding: 12,
+    gap: 10,
+  },
+  pressedFeedback: {
+    opacity: 0.88,
   },
 });

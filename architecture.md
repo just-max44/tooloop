@@ -69,3 +69,47 @@ La logique métier est locale (stores en mémoire), sans persistance serveur à 
 - Brancher auth + rôles utilisateur réels
 - Stocker objets, demandes, pass, validations, feedback
 - Ajouter traçabilité temporelle serveur et notifications
+
+## 6) Conventions d’architecture (à respecter)
+
+### Séparation des couches
+- `app/` : écrans et composition UX uniquement.
+- `components/` : UI réutilisable, pas de logique métier.
+- `stores/` : orchestration front et état local orienté feature.
+- `lib/backend/` et `services/` : accès données / intégrations externes.
+- `types/` : contrats partagés (dont types Supabase séparés du front).
+
+### Règles de dépendances
+- Un écran peut consommer `stores` + `components`, mais pas accéder directement à des détails d’implémentation backend non exposés.
+- Un `store` peut consommer `lib/backend` et `services`, mais ne doit pas contenir de JSX.
+- Les composants UI ne doivent pas importer `lib/backend`.
+
+### Gestion d’erreurs et loading
+- Toute mutation asynchrone passe par un point de capture `try/catch` unique au niveau store/context.
+- Les erreurs utilisateur passent par `app-notice-store` (message cohérent, ton `error`).
+- Les états de chargement partagés passent par contexte/store dédié, pas via duplication d’états locaux non nécessaires.
+
+## 7) Conventions de code
+
+### Typage
+- `strict` TypeScript obligatoire, pas de `any`.
+- Préférer `unknown` + normalisation explicite des erreurs.
+- Les types DB proviennent de `types/supabase.ts`.
+
+### Nommage
+- Fonctions async : verbes explicites (`refreshBackendData`, `addListing`, `approveStoryContribution`).
+- Stores : noms orientés domaine (`listings-store`, `object-story-store`, `app-notice-store`).
+- Types : suffixes explicites (`Row`, `Insert`, `Update`, `State`, `Props`).
+
+### Tests
+- Priorité aux tests unitaires des stores/contexts critiques.
+- Couvrir minimum : chemin succès, erreur normalisée, et effet de bord principal.
+
+## 8) Checklist PR (maintenabilité revente)
+
+- Un seul objectif fonctionnel par session.
+- Un seul module impacté quand possible.
+- `npx tsc --noEmit` sans erreur.
+- `npm run lint` sans erreur.
+- Tests ciblés ajoutés/mis à jour si logique métier modifiée.
+- Aucun ajout de dépendance sans justification produit/technique.

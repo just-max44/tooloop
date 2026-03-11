@@ -1,9 +1,10 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Platform } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { Colors, Shadows, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
@@ -26,12 +27,26 @@ export default function TabLayout() {
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarHideOnKeyboard: true,
-        tabBarLabelStyle: { fontSize: 11 },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          letterSpacing: 0.35,
+          fontWeight: '500',
+        },
         tabBarStyle: {
-          borderTopColor: Colors[resolvedTheme].border,
+          position: 'absolute',
+          left: Spacing.lg,
+          right: Spacing.lg,
+          bottom: Platform.OS === 'android' ? Spacing.md : Spacing.sm,
+          borderTopColor: Colors[resolvedTheme].borderSubtle,
+          borderColor: Colors[resolvedTheme].border,
+          borderWidth: 1,
+          borderTopWidth: 1,
+          borderRadius: 22,
           backgroundColor: Colors[resolvedTheme].surface,
-          height: 62,
-          paddingTop: 4,
+          height: Platform.OS === 'android' ? 68 : 66,
+          paddingTop: Spacing.xs,
+          paddingBottom: Platform.OS === 'android' ? Spacing.xs : Spacing.sm,
+          ...Shadows.md,
         },
       }}>
       <Tabs.Screen

@@ -1,0 +1,45 @@
+name: EAS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS profile (preview/production)
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+      platform:
+        description: Build platform
+        required: true
+        default: android
+        type: choice
+        options:
+          - android
+          - ios
+          - all
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Setup Expo and EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Trigger EAS build
+        run: eas build --non-interactive --platform ${{ inputs.platform }} --profile ${{ inputs.profile }}

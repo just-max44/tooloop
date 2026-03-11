@@ -1,4 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -8,27 +9,30 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Card } from '@/components/ui/card';
+import { Chip } from '@/components/ui/chip';
+import { EmptyState } from '@/components/ui/empty-state';
 import { ObjectCard } from '@/components/ui/object-card';
 import { SearchBar } from '@/components/ui/search-bar';
-import { Colors, Radius } from '@/constants/theme';
+import { getDerivedColors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { DISCOVER_FILTERS, DISCOVER_OBJECTS, NEIGHBORHOOD_PULSE, refreshBackendData, useBackendDataVersion } from '@/lib/backend/data';
+import { DISCOVER_FILTERS, refreshBackendData } from '@/lib/backend/data';
+import { t } from '@/lib/i18n/i18n';
+import { useBackendStore } from '@/stores/backend-store';
 
 const DISTANCE_FILTERS = [
-  { label: 'Tous', value: null },
-  { label: '5 km', value: 5 },
-  { label: '10 km', value: 10 },
-  { label: '20 km', value: 20 },
+  { label: t('explore.radiusAll'), value: null },
+  { label: t('explore.radius5'), value: 5 },
+  { label: t('explore.radius10'), value: 10 },
+  { label: t('explore.radius20'), value: 20 },
 ] as const;
 
 export default function TabTwoScreen() {
-  useBackendDataVersion();
+  const DISCOVER_OBJECTS = useBackendStore((s) => s.discoverObjects);
+  const NEIGHBORHOOD_PULSE = useBackendStore((s) => s.neighborhoodPulse);
   const router = useRouter();
   const colorScheme = useColorScheme();
   const resolvedTheme = colorScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[resolvedTheme];
-  const mutedText = useThemeColor({}, 'mutedText');
+  const colors = getDerivedColors(resolvedTheme);
 
   const [activeCategory, setActiveCategory] = useState<(typeof DISCOVER_FILTERS)[number]>('Tout');
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,6 +110,12 @@ export default function TabTwoScreen() {
     });
   }, [syncLocationState]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void refreshBackendData();
+    }, [])
+  );
+
   const onRefresh = async () => {
     setIsRefreshing(true);
     try {
@@ -152,153 +162,123 @@ export default function TabTwoScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.tint} colors={[colors.tint]} />}>
           <View style={styles.screenWrap}>
-        <View style={styles.headerBlock}>
-          <ThemedText type="title">Découvrir</ThemedText>
-          <ThemedText style={{ color: mutedText }}>Trouve des objets disponibles autour de toi.</ThemedText>
-        </View>
+            <Card variant="filled" style={styles.searchHeroCard}>
+              <View style={styles.headerBlock}>
+                <ThemedText type="title">{t('explore.title')}</ThemedText>
+                <ThemedText type="caption">{t('explore.subtitle')}</ThemedText>
+              </View>
 
-        <SearchBar
-          placeholder="Rechercher un objet"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          accessibilityLabel="Rechercher un objet"
-        />
+              <SearchBar
+                placeholder={t("explore.searchPlaceholder")}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                accessibilityLabel={t("explore.searchAccessibility")}
+              />
+            </Card>
 
-        <Pressable
-          onPress={() => router.push('/community')}
-          accessibilityRole="button"
-          accessibilityLabel="Ouvrir la carte et les challenges du quartier"
-          style={styles.pulsePressable}>
-        <Card style={styles.pulseCard}>
-          <View style={styles.pulseHeader}>
-            <View style={[styles.pulseIconWrap, { backgroundColor: `${colors.tint}22` }]}>
-              <MaterialIcons name="location-on" size={14} color={colors.tint} />
-            </View>
-            <View style={styles.pulseTextWrap}>
-              <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>Pulse quartier</ThemedText>
-              <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                {nearbyCount} objets proches · {NEIGHBORHOOD_PULSE.loopsThisWeek} échanges cette semaine
-              </ThemedText>
-              <ThemedText style={{ color: mutedText, fontSize: 11 }}>
-                {locationPermission === 'granted' && isLocationServiceEnabled
-                  ? `Position active (${lastLocationLabel ?? 'GPS détecté'}). Résultats triés par proximité.`
-                  : locationPermission === 'granted'
-                    ? 'Permission accordée mais GPS du téléphone inactif.'
-                    : 'Position inactive: active-la pour améliorer la recherche autour de toi.'}
-              </ThemedText>
-            </View>
-          </View>
-        </Card>
-        </Pressable>
-        {(locationPermission !== 'granted' || !isLocationServiceEnabled) ? (
-          <Pressable
-            onPress={requestLocationPermission}
-            accessibilityRole="button"
-            accessibilityLabel="Activer la position"
-            style={[styles.locationButton, { borderColor: colors.border, backgroundColor: colors.surface }]}
-            disabled={isRequestingLocation}>
-            <MaterialIcons name="my-location" size={14} color={colors.tint} />
-            <ThemedText type="defaultSemiBold" style={{ color: colors.tint, fontSize: 12 }}>
-              {isRequestingLocation
-                ? 'Activation en cours...'
-                : locationPermission === 'denied'
-                  ? 'Ouvrir les réglages localisation'
-                  : 'Activer ma position'}
-            </ThemedText>
-          </Pressable>
-        ) : null}
+            <Pressable
+              onPress={() => router.push('/community')}
+              accessibilityRole="button"
+              accessibilityLabel={t("explore.openCommunity")}
+              style={styles.pulsePressable}>
+              <Card variant="outlined" style={styles.pulseCard}>
+                <View style={styles.pulseHeader}>
+                  <View style={[styles.pulseIconWrap, { backgroundColor: colors.tintMuted }]}>
+                    <MaterialIcons name="location-on" size={14} color={colors.tint} />
+                  </View>
+                  <View style={styles.pulseTextWrap}>
+                    <ThemedText type="defaultSemiBold" style={{ fontSize: 14 }}>{t('explore.pulse')}</ThemedText>
+                    <ThemedText type="caption">
+                      {t('explore.pulseStats', { nearbyCount: String(nearbyCount), loopsThisWeek: String(NEIGHBORHOOD_PULSE.loopsThisWeek) })}
+                    </ThemedText>
+                    <ThemedText type="caption" style={{ fontSize: 11 }}>
+                      {locationPermission === 'granted' && isLocationServiceEnabled
+                        ? t('explore.locationActive', { label: lastLocationLabel ?? t('explore.locationActiveDefault') })
+                        : locationPermission === 'granted'
+                          ? t('explore.locationServiceDisabled')
+                          : t('explore.locationInactive')}
+                    </ThemedText>
+                  </View>
+                </View>
+              </Card>
+            </Pressable>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-          {DISCOVER_FILTERS.map((category) => {
-            const active = category === activeCategory;
-            return (
+            {(locationPermission !== 'granted' || !isLocationServiceEnabled) ? (
               <Pressable
-                key={category}
-                onPress={() => setActiveCategory(category)}
+                onPress={requestLocationPermission}
                 accessibilityRole="button"
-                accessibilityLabel={`Filtrer par ${category}`}
-                accessibilityState={{ selected: active }}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: active ? colors.tint : colors.surface,
-                    borderColor: active ? colors.tint : colors.border,
-                  },
-                ]}>
-                <ThemedText
-                  type="defaultSemiBold"
-                  style={{ color: active ? '#FFFFFF' : colors.text, fontSize: 13, lineHeight: 18 }}>
-                  {category}
+                accessibilityLabel={t("explore.enableLocation")}
+                style={[styles.locationButton, { borderColor: colors.softBorder, backgroundColor: colors.softSurface }]}
+                disabled={isRequestingLocation}>
+                <MaterialIcons name="my-location" size={14} color={colors.tint} />
+                <ThemedText type="defaultSemiBold" style={{ color: colors.tint, fontSize: 12 }}>
+                  {isRequestingLocation
+                    ? t("explore.enablingLocation")
+                    : locationPermission === 'denied'
+                      ? t("explore.openLocationSettings")
+                      : t("explore.enableLocation")}
                 </ThemedText>
               </Pressable>
-            );
-          })}
-        </ScrollView>
+            ) : null}
 
-        <View style={styles.distanceBlock}>
-          <ThemedText type="defaultSemiBold" style={{ fontSize: 13 }}>
-            Rayon
-          </ThemedText>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-            {DISTANCE_FILTERS.map((distanceFilter) => {
-              const active = distanceFilter.value === activeDistanceKm;
-              return (
-                <Pressable
-                  key={distanceFilter.label}
-                  onPress={() => setActiveDistanceKm(distanceFilter.value)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Filtrer dans un rayon de ${distanceFilter.label}`}
-                  accessibilityState={{ selected: active }}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: active ? colors.tint : colors.surface,
-                      borderColor: active ? colors.tint : colors.border,
-                    },
-                  ]}>
-                  <ThemedText
-                    type="defaultSemiBold"
-                    style={{ color: active ? '#FFFFFF' : colors.text, fontSize: 13, lineHeight: 18 }}>
-                    {distanceFilter.label}
-                  </ThemedText>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+              {DISCOVER_FILTERS.map((category) => (
+                <Chip
+                  key={category}
+                  label={category}
+                  selected={category === activeCategory}
+                  onPress={() => setActiveCategory(category)}
+                />
+              ))}
+            </ScrollView>
 
-        <View style={styles.listWrap}>
-          {filtered.length === 0 ? (
-            <Card style={[styles.emptyStateCard, { borderColor: colors.border }]}>
-              <ThemedText type="defaultSemiBold">Aucune offre trouvée</ThemedText>
-              <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                Ajuste les filtres ou ta recherche pour afficher des objets proches.
+            <View style={styles.distanceBlock}>
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 13 }}>
+                {t('explore.radius')}
               </ThemedText>
-            </Card>
-          ) : null}
-          {filtered.map((objectItem) => (
-            <ObjectCard
-              key={objectItem.id}
-              title={objectItem.title}
-              description={objectItem.description}
-              imageUrl={objectItem.imageUrl}
-              distanceKm={objectItem.distanceKm}
-              ownerName={objectItem.ownerName}
-              responseTime={objectItem.responseTime}
-              isFree={objectItem.isFree}
-              trustScore={objectItem.trustScore}
-              loopsCompleted={objectItem.loopsCompleted}
-              onOwnerPress={() =>
-                router.push({
-                  pathname: '/trust',
-                  params: { userName: objectItem.ownerName, role: 'prêteur' },
-                })
-              }
-              onPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
-              onBorrowPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
-            />
-          ))}
-        </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                {DISTANCE_FILTERS.map((distanceFilter) => (
+                  <Chip
+                    key={distanceFilter.label}
+                    label={distanceFilter.label}
+                    selected={distanceFilter.value === activeDistanceKm}
+                    onPress={() => setActiveDistanceKm(distanceFilter.value)}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.listWrap}>
+              {filtered.length === 0 ? (
+                <EmptyState
+                  title={t('explore.noOffers')}
+                  description={t('explore.noOffersHint')}
+                  icon="search-off"
+                />
+              ) : null}
+              {filtered.map((objectItem) => (
+                <ObjectCard
+                  key={objectItem.id}
+                  title={objectItem.title}
+                  description={objectItem.description}
+                  imageUrl={objectItem.imageUrl}
+                  distanceKm={objectItem.distanceKm}
+                  ownerName={objectItem.ownerName}
+                  responseTime={objectItem.responseTime}
+                  isFree={objectItem.isFree}
+                  trustScore={objectItem.trustScore}
+                  loopsCompleted={objectItem.loopsCompleted}
+                  onOwnerPress={() =>
+                    router.push({
+                      pathname: '/trust',
+                      params: { userName: objectItem.ownerName, role: 'pr\u00eateur' },
+                    })
+                  }
+                  onPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
+                  onBorrowPress={() => router.push({ pathname: '/object/[id]', params: { id: objectItem.id } })}
+                />
+              ))}
+            </View>
           </View>
         </ScrollView>
       </ThemedView>
@@ -314,54 +294,49 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 24,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: 120,
   },
   screenWrap: {
     width: '100%',
     maxWidth: 760,
     alignSelf: 'center',
-    gap: 14,
+    gap: Spacing.lg,
   },
   headerBlock: {
-    gap: 4,
+    gap: Spacing.xs,
+  },
+  searchHeroCard: {
+    gap: Spacing.md,
   },
   distanceBlock: {
-    gap: 6,
+    gap: Spacing.sm,
   },
   chipsRow: {
-    gap: 8,
-    paddingRight: 8,
-  },
-  chip: {
-    borderRadius: Radius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
+    gap: Spacing.sm,
+    paddingRight: Spacing.sm,
   },
   pulseCard: {
-    gap: 6,
-    paddingVertical: 12,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
   },
   locationButton: {
-    marginTop: 8,
     borderWidth: 1,
     borderRadius: Radius.md,
-    minHeight: 34,
-    paddingHorizontal: 10,
+    minHeight: 42,
+    paddingHorizontal: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: Spacing.xs,
   },
   pulsePressable: {
     borderRadius: Radius.lg,
-    opacity: 0.92,
   },
   pulseHeader: {
     flexDirection: 'row',
-    gap: 8,
+    gap: Spacing.sm,
   },
   pulseIconWrap: {
     width: 24,
@@ -373,12 +348,9 @@ const styles = StyleSheet.create({
   },
   pulseTextWrap: {
     flex: 1,
-    gap: 2,
+    gap: Spacing.xs,
   },
   listWrap: {
-    gap: 12,
-  },
-  emptyStateCard: {
-    borderWidth: 1,
+    gap: Spacing.md,
   },
 });

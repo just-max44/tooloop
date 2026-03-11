@@ -1,18 +1,32 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { LEGAL_ROUTES } from '@/constants/legal';
-import { Radius } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { signInWithEmailPassword, signUpWithEmailPassword, useAuthSession } from '@/lib/backend/auth';
+import { refreshBackendData } from '@/lib/backend/data';
 import { showAppNotice } from '@/stores/app-notice-store';
+
+const ERROR_MESSAGES: Record<string, string> = {
+  'Invalid payload': 'Email incorrect ou mot de passe trop court (min 8 car.).',
+  'Email already registered': 'Cet email est pris. Essaie de te connecter.',
+  'Invalid credentials': 'Email ou mot de passe incorrect.',
+  'Unauthorized': 'Session expir\u00e9e, reconnecte-toi.',
+  'Trop de tentatives, r\u00e9essayez dans 15 minutes.': 'Trop de tentatives, r\u00e9essaie dans 15 minutes.',
+};
+
+function friendlyError(raw: string, fallback: string): string {
+  return ERROR_MESSAGES[raw] ?? fallback;
+}
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -24,18 +38,17 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<'idle' | 'checking' | 'ok' | 'down'>('idle');
 
   const background = useThemeColor({}, 'background');
-  const surface = useThemeColor({}, 'surface');
-  const mutedText = useThemeColor({}, 'mutedText');
-  const text = useThemeColor({}, 'text');
+  const surfaceRaised = useThemeColor({}, 'surfaceRaised');
   const tint = useThemeColor({}, 'tint');
   const border = useThemeColor({}, 'border');
   const danger = useThemeColor({}, 'danger');
+  const text = useThemeColor({}, 'text');
 
   const { session, isLoading, isBackendConfigured } = useAuthSession();
+  const backendUrl = process.env.EXPO_PUBLIC_CUSTOM_API_BASE_URL?.trim() ?? '';
   const hasLowercase = /[a-z]/.test(password);
   const hasUppercase = /[A-Z]/.test(password);
   const hasDigit = /\d/.test(password);
@@ -57,6 +70,41 @@ export default function LoginScreen() {
     }
   }, [isLoading, router, session]);
 
+  useEffect(() => {
+    if (!isBackendConfigured || !backendUrl) {
+      setBackendStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const run = async () => {
+      setBackendStatus('checking');
+      try {
+        const response = await fetch(`${backendUrl}/health`, { signal: controller.signal });
+        if (!cancelled) {
+          setBackendStatus(response.ok ? 'ok' : 'down');
+        }
+      } catch {
+        if (!cancelled) {
+          setBackendStatus('down');
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [backendUrl, isBackendConfigured]);
+
   const connectWithEmail = async () => {
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
@@ -66,14 +114,20 @@ export default function LoginScreen() {
       return;
     }
 
+    if (backendStatus === 'down') {
+      showAppNotice('Serveur inaccessible. Vérifie ton URL API et démarre le backend.', 'error');
+      return;
+    }
+
     setIsEmailSignInLoading(true);
     try {
       await signInWithEmailPassword(normalizedEmail, normalizedPassword);
-      showAppNotice('Connexion email réussie.', 'success');
+      await refreshBackendData().catch(() => {});
+      showAppNotice('Connexion r\u00e9ussie.', 'success');
       router.replace('/(tabs)');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Connexion email impossible.';
-      showAppNotice(message, 'error');
+      const raw = error instanceof Error ? error.message : '';
+      showAppNotice(friendlyError(raw, 'Connexion impossible.'), 'error');
     } finally {
       setIsEmailSignInLoading(false);
     }
@@ -87,7 +141,7 @@ export default function LoginScreen() {
     const normalizedConfirmPassword = confirmPassword.trim();
 
     if (!normalizedFirstName || !normalizedLastName || !normalizedEmail || !normalizedPassword || !normalizedConfirmPassword) {
-      showAppNotice('Saisis nom, prénom, email et mot de passe pour créer le compte.', 'warning');
+      showAppNotice('Remplis tous les champs pour cr\u00e9er ton compte.', 'warning');
       return;
     }
 
@@ -96,16 +150,21 @@ export default function LoginScreen() {
       return;
     }
 
+    if (backendStatus === 'down') {
+      showAppNotice('Serveur inaccessible. Vérifie ton URL API et démarre le backend.', 'error');
+      return;
+    }
+
     setIsEmailSignUpLoading(true);
     try {
       await signUpWithEmailPassword(normalizedEmail, normalizedPassword, normalizedFirstName, normalizedLastName);
-      showAppNotice('Compte créé. Tu peux te connecter avec email/mot de passe.', 'success');
+      showAppNotice('Compte cr\u00e9\u00e9 ! Tu peux te connecter.', 'success');
       setAuthMode('signin');
       setPassword('');
       setConfirmPassword('');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Création de compte impossible.';
-      showAppNotice(message, 'error');
+      const raw = error instanceof Error ? error.message : '';
+      showAppNotice(friendlyError(raw, 'Cr\u00e9ation de compte impossible.'), 'error');
     } finally {
       setIsEmailSignUpLoading(false);
     }
@@ -122,93 +181,123 @@ export default function LoginScreen() {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
-            <Card style={styles.card}>
-              <View style={[styles.logoCircle, { backgroundColor: `${tint}22` }]}>
-                <MaterialIcons name="handyman" size={30} color={tint} />
+            <View style={[styles.introPanel, { backgroundColor: surfaceRaised, borderColor: `${border}AA` }]}>
+              <View style={styles.introTopRow}>
+                <View style={[styles.logoCircle, { backgroundColor: `${tint}1A` }]}>
+                  <MaterialIcons name="handyman" size={28} color={tint} />
+                </View>
+                <ThemedText type="label" style={{ color: tint }}>
+                  Tooloop
+                </ThemedText>
               </View>
 
-              <ThemedText type="title">{authMode === 'signin' ? 'Connexion Tooloop' : 'Créer un compte'}</ThemedText>
-              <ThemedText style={{ color: mutedText }}>
-                {authMode === 'signin'
-                  ? 'Connecte-toi pour publier, échanger et valider tes prêts avec ton compte.'
-                  : 'Crée ton compte pour démarrer les échanges sur Tooloop.'}
+              <ThemedText type="title" style={styles.introTitle}>
+                Prête. Emprunte. Boucle locale.
               </ThemedText>
 
+              <ThemedText type="caption" style={styles.introCaption}>
+                Une expérience plus simple pour partager des objets entre voisins en toute confiance.
+              </ThemedText>
+
+              <View style={styles.introBadgesRow}>
+                <View style={[styles.introBadge, { backgroundColor: `${tint}12`, borderColor: `${tint}36` }]}>
+                  <MaterialIcons name="verified-user" size={14} color={tint} />
+                  <ThemedText type="caption" style={{ color: text }}>
+                    Profil fiable
+                  </ThemedText>
+                </View>
+                <View style={[styles.introBadge, { backgroundColor: `${tint}12`, borderColor: `${tint}36` }]}>
+                  <MaterialIcons name="sync" size={14} color={tint} />
+                  <ThemedText type="caption" style={{ color: text }}>
+                    Parcours guidé
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+
+            <Card style={styles.card}>
+
+              <View style={styles.headerBlock}>
+                <ThemedText type="title" style={styles.centered}>
+                  {authMode === 'signin' ? 'Connexion' : 'Cr\u00e9er un compte'}
+                </ThemedText>
+                <ThemedText type="caption" style={styles.centered}>
+                  {authMode === 'signin'
+                    ? 'Connecte-toi pour publier, \u00e9changer et valider tes pr\u00eats.'
+                    : 'Cr\u00e9e ton compte pour d\u00e9marrer sur Tooloop.'}
+                </ThemedText>
+              </View>
+
               {!isBackendConfigured ? (
-                <View style={[styles.warningBox, { borderColor: danger, backgroundColor: `${danger}18` }]}>
+                <View style={[styles.warningBox, { borderColor: `${danger}55`, backgroundColor: `${danger}10` }]}>
                   <ThemedText type="defaultSemiBold" style={{ color: danger }}>
                     Backend non configuré
                   </ThemedText>
-                  <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                    Ajoute EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY dans `.env` (dev local) et dans EAS Environment Variables (APK/AAB), puis redémarre l&apos;app.
+                  <ThemedText type="caption">
+                    Ajoute EXPO_PUBLIC_CUSTOM_API_BASE_URL dans `.env` puis redémarre l'app.
                   </ThemedText>
                 </View>
               ) : null}
 
-              <View style={[styles.emailAuthWrap, { borderColor: border, backgroundColor: surface }]}>
-                <ThemedText type="defaultSemiBold">
-                  {authMode === 'signin' ? 'Connexion' : 'Inscription'}
-                </ThemedText>
+              {isBackendConfigured && backendStatus === 'down' ? (
+                <View style={[styles.warningBox, { borderColor: `${danger}55`, backgroundColor: `${danger}10` }]}>
+                  <ThemedText type="defaultSemiBold" style={{ color: danger }}>
+                    Backend inaccessible
+                  </ThemedText>
+                  <ThemedText type="caption">
+                    Impossible de joindre {backendUrl || 'l\'API configurée'}. Vérifie que le serveur est lancé et accessible depuis ton appareil.
+                  </ThemedText>
+                </View>
+              ) : null}
 
+              <View style={styles.formWrap}>
                 {authMode === 'signup' ? (
-                  <>
-                    <TextInput
-                      value={firstName}
-                      onChangeText={setFirstName}
-                      placeholder="Prénom"
-                      placeholderTextColor={mutedText}
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                      style={[styles.input, { borderColor: border, backgroundColor: surface, color: text }]}
-                    />
-                    <TextInput
-                      value={lastName}
-                      onChangeText={setLastName}
-                      placeholder="Nom"
-                      placeholderTextColor={mutedText}
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                      style={[styles.input, { borderColor: border, backgroundColor: surface, color: text }]}
-                    />
-                  </>
+                  <View style={styles.nameRow}>
+                    <View style={styles.nameField}>
+                      <Input
+                        value={firstName}
+                        onChangeText={setFirstName}
+                        placeholder="Pr\u00e9nom"
+                        icon="person-outline"
+                        autoCapitalize="words"
+                        autoCorrect={false}
+                      />
+                    </View>
+                    <View style={styles.nameField}>
+                      <Input
+                        value={lastName}
+                        onChangeText={setLastName}
+                        placeholder="Nom"
+                        autoCapitalize="words"
+                        autoCorrect={false}
+                      />
+                    </View>
+                  </View>
                 ) : null}
 
-                <TextInput
+                <Input
                   value={email}
                   onChangeText={setEmail}
                   placeholder="Email"
-                  placeholderTextColor={mutedText}
+                  icon="mail-outline"
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={[styles.input, { borderColor: border, backgroundColor: surface, color: text }]}
                 />
 
-                <View style={[styles.passwordRow, { borderColor: border, backgroundColor: surface }]}>
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Mot de passe"
-                    placeholderTextColor={mutedText}
-                    secureTextEntry={!isPasswordVisible}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={[styles.passwordInput, { color: text }]}
-                  />
-                  <Pressable
-                    onPress={() => setIsPasswordVisible((current) => !current)}
-                    accessibilityRole="button"
-                    accessibilityLabel={isPasswordVisible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-                    style={styles.eyeButton}>
-                    <MaterialIcons name={isPasswordVisible ? 'visibility-off' : 'visibility'} size={20} color={mutedText} />
-                  </Pressable>
-                </View>
+                <Input
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Mot de passe"
+                  icon="lock-outline"
+                  isPassword
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
 
                 {authMode === 'signup' && passwordStrengthLabel ? (
                   <View style={styles.passwordStrengthWrap}>
-                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                      Force du mot de passe: {passwordStrengthLabel}
-                    </ThemedText>
+                    <ThemedText type="caption">Force : {passwordStrengthLabel}</ThemedText>
                     <View style={styles.strengthBarsRow}>
                       {[1, 2, 3].map((step) => (
                         <View
@@ -221,7 +310,7 @@ export default function LoginScreen() {
                                 (passwordStrengthLabel === 'Moyen' && step <= 2) ||
                                 (passwordStrengthLabel === 'Fort' && step <= 3)
                                   ? tint
-                                  : `${border}88`,
+                                  : `${border}55`,
                             },
                           ]}
                         />
@@ -231,36 +320,23 @@ export default function LoginScreen() {
                 ) : null}
 
                 {authMode === 'signup' ? (
-                  <View style={[styles.passwordRow, { borderColor: border, backgroundColor: surface }]}>
-                    <TextInput
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      placeholder="Confirmer le mot de passe"
-                      placeholderTextColor={mutedText}
-                      secureTextEntry={!isConfirmPasswordVisible}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      style={[styles.passwordInput, { color: text }]}
-                    />
-                    <Pressable
-                      onPress={() => setIsConfirmPasswordVisible((current) => !current)}
-                      accessibilityRole="button"
-                      accessibilityLabel={isConfirmPasswordVisible ? 'Masquer la confirmation mot de passe' : 'Afficher la confirmation mot de passe'}
-                      style={styles.eyeButton}>
-                      <MaterialIcons
-                        name={isConfirmPasswordVisible ? 'visibility-off' : 'visibility'}
-                        size={20}
-                        color={mutedText}
-                      />
-                    </Pressable>
-                  </View>
+                  <Input
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Confirmer le mot de passe"
+                    icon="lock-outline"
+                    isPassword
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
                 ) : null}
 
                 {authMode === 'signin' ? (
                   <>
                     <Button
                       label="Se connecter"
-                      variant="secondary"
+                      variant="primary"
+                      size="lg"
                       loading={isEmailSignInLoading}
                       disabled={!isBackendConfigured || isEmailSignUpLoading}
                       onPress={connectWithEmail}
@@ -269,16 +345,17 @@ export default function LoginScreen() {
                       onPress={() => setAuthMode('signup')}
                       disabled={isEmailSignInLoading || isEmailSignUpLoading}
                       accessibilityRole="button"
-                      accessibilityLabel="Ouvrir la création de compte"
+                      accessibilityLabel="Ouvrir la cr\u00e9ation de compte"
                       style={styles.switchAuthModeButton}>
-                      <ThemedText type="link">Créer un compte</ThemedText>
+                      <ThemedText type="link">Cr\u00e9er un compte</ThemedText>
                     </Pressable>
                   </>
                 ) : (
                   <>
                     <Button
-                      label="Créer mon compte"
-                      variant="secondary"
+                      label="Cr\u00e9er mon compte"
+                      variant="primary"
+                      size="lg"
                       loading={isEmailSignUpLoading}
                       disabled={!isBackendConfigured || isEmailSignInLoading}
                       onPress={createEmailAccount}
@@ -287,33 +364,31 @@ export default function LoginScreen() {
                       onPress={() => setAuthMode('signin')}
                       disabled={isEmailSignInLoading || isEmailSignUpLoading}
                       accessibilityRole="button"
-                      accessibilityLabel="Revenir à la connexion"
+                      accessibilityLabel="Revenir \u00e0 la connexion"
                       style={styles.switchAuthModeButton}>
-                      <ThemedText type="link">J’ai déjà un compte</ThemedText>
+                      <ThemedText type="link">J'ai d\u00e9j\u00e0 un compte</ThemedText>
                     </Pressable>
                   </>
                 )}
               </View>
 
-              <View style={[styles.infoBox, { borderColor: border, backgroundColor: `${tint}10` }]}>
-                <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                  En continuant, tu acceptes les termes d’utilisation et la politique de confidentialité.
-                </ThemedText>
-                <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                  Tu restes connecté sur cet appareil jusqu’à déconnexion manuelle.
+              <View style={[styles.infoBox, { borderColor: `${border}88`, backgroundColor: `${tint}08` }]}>
+                <ThemedText type="caption" style={styles.centered}>
+                  En continuant, tu acceptes nos conditions.
                 </ThemedText>
                 <View style={styles.legalLinksRow}>
                   <Pressable
                     onPress={() => router.push(LEGAL_ROUTES.terms as never)}
                     accessibilityRole="button"
-                    accessibilityLabel="Voir les termes d’utilisation">
-                    <ThemedText type="link">Voir les termes d’utilisation</ThemedText>
+                    accessibilityLabel="Voir les termes">
+                    <ThemedText type="link" style={styles.legalLink}>Termes</ThemedText>
                   </Pressable>
+                  <ThemedText type="caption"> &middot; </ThemedText>
                   <Pressable
                     onPress={() => router.push(LEGAL_ROUTES.privacyPolicy as never)}
                     accessibilityRole="button"
-                    accessibilityLabel="Voir la politique de confidentialité">
-                    <ThemedText type="link">Politique de confidentialité</ThemedText>
+                    accessibilityLabel="Voir la confidentialit\u00e9">
+                    <ThemedText type="link" style={styles.legalLink}>Confidentialit\u00e9</ThemedText>
                   </Pressable>
                 </View>
               </View>
@@ -334,92 +409,119 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    padding: 16,
+    padding: Spacing.lg,
   },
   scrollContent: {
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.lg,
+    paddingVertical: Spacing.lg,
+    width: '100%',
+  },
+  introPanel: {
+    width: '100%',
+    maxWidth: 480,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  introTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   card: {
     width: '100%',
-    maxWidth: 520,
-    gap: 12,
+    maxWidth: 480,
+    gap: Spacing.lg,
   },
   logoCircle: {
-    width: 56,
-    height: 56,
+    width: 52,
+    height: 52,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
+  },
+  introTitle: {
+    fontSize: 31,
+    lineHeight: 38,
+  },
+  introCaption: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  introBadgesRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    flexWrap: 'wrap',
+    marginTop: Spacing.xs,
+  },
+  introBadge: {
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerBlock: {
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  centered: {
+    textAlign: 'center',
   },
   warningBox: {
     borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 3,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.xs,
   },
-  infoBox: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 6,
+  formWrap: {
+    gap: Spacing.md,
   },
-  legalLinksRow: {
-    gap: 4,
-  },
-  emailAuthWrap: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    minHeight: 44,
-    paddingHorizontal: 12,
-    fontSize: 14,
-  },
-  passwordRow: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    minHeight: 44,
-    paddingHorizontal: 10,
+  nameRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    gap: Spacing.sm,
   },
-  passwordInput: {
+  nameField: {
     flex: 1,
-    minHeight: 44,
-    fontSize: 14,
-  },
-  eyeButton: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   passwordStrengthWrap: {
-    gap: 4,
+    gap: Spacing.xs,
   },
   strengthBarsRow: {
     flexDirection: 'row',
-    gap: 6,
+    gap: Spacing.sm,
   },
   strengthBar: {
     flex: 1,
-    height: 5,
+    height: 4,
     borderRadius: Radius.full,
   },
   switchAuthModeButton: {
-    minHeight: 32,
+    minHeight: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  infoBox: {
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.xs,
+    alignItems: 'center',
+  },
+  legalLinksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legalLink: {
+    fontSize: 13,
   },
 });

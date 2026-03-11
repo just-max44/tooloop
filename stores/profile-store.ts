@@ -1,12 +1,7 @@
-import { PROFILE_USER, useBackendDataVersion } from '@/lib/backend/data';
+import { useBackendStore, backendStore } from '@/stores/backend-store';
 
 export function useProfile() {
-  useBackendDataVersion();
-  return {
-    firstName: PROFILE_USER.firstName,
-    lastName: PROFILE_USER.lastName,
-    photoUri: PROFILE_USER.photoUri,
-  };
+  return useBackendStore((s) => s.profileUser);
 }
 
 export function updateProfilePhoto(photoUri: string) {
@@ -15,5 +10,7 @@ export function updateProfilePhoto(photoUri: string) {
     return;
   }
 
-  PROFILE_USER.photoUri = normalized;
+  backendStore.setState((s) => ({
+    profileUser: { ...s.profileUser, photoUri: normalized },
+  }));
 }

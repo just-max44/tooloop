@@ -17,22 +17,21 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import {
     getObjectByLoanObjectName,
     getObjectImageByLoanObjectName,
-    INBOX_LOANS,
-    PROFILE_USER,
-    useBackendDataVersion,
 } from '@/lib/backend/data';
 import { showAppNotice } from '@/stores/app-notice-store';
+import { useBackendStore } from '@/stores/backend-store';
 import { addStoryContribution } from '@/stores/object-story-store';
-import { getProofProgress } from '@/stores/proof/progress-store';
 import {
     getPickupReturnDateLabel,
+    getProofProgress,
     getReturnConditionLabel,
     isBorrowerPickupAccepted,
     isBorrowerReturnAccepted,
-} from '@/stores/proof/return-timing-store';
+} from '@/stores/proof';
 
 export default function ProofHomeScreen() {
-  useBackendDataVersion();
+  const INBOX_LOANS = useBackendStore((s) => s.inboxLoans);
+  const PROFILE_USER = useBackendStore((s) => s.profileUser);
   const router = useRouter();
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
   useProofBackToInbox();
@@ -43,12 +42,14 @@ export default function ProofHomeScreen() {
   const surface = useThemeColor({}, 'surface');
   const text = useThemeColor({}, 'text');
   const tint = useThemeColor({}, 'tint');
+  const softSurface = `${surface}F2`;
+  const softBorder = `${border}AA`;
   const [, setRefreshKey] = useState(0);
   const [storyPhotoUri, setStoryPhotoUri] = useState<string | null>(null);
   const [storyComment, setStoryComment] = useState('');
   const [storySubmitted, setStorySubmitted] = useState(false);
 
-  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [loanId]);
+  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [INBOX_LOANS, loanId]);
   const proofProgress = loanId ? getProofProgress(loanId) : { pickupValidated: false, returnValidated: false };
   const borrowerAcceptedPickup = loanId ? isBorrowerPickupAccepted(loanId) : false;
   const borrowerAcceptedReturn = loanId ? isBorrowerReturnAccepted(loanId) : false;
@@ -136,7 +137,7 @@ export default function ProofHomeScreen() {
             {objectImageUri ? (
               <Image source={{ uri: objectImageUri }} style={styles.objectPhoto} contentFit="cover" />
             ) : (
-              <View style={[styles.photoFallback, { borderColor: border, backgroundColor: surface }]}>
+              <View style={[styles.photoFallback, { borderColor: softBorder, backgroundColor: softSurface }]}>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>Photo indisponible</ThemedText>
               </View>
             )}
@@ -231,7 +232,7 @@ export default function ProofHomeScreen() {
                   </ThemedText>
 
                   {storyPhotoUri ? (
-                    <View style={[styles.storyPhotoPreviewWrap, { borderColor: border, backgroundColor: surface }]}>
+                    <View style={[styles.storyPhotoPreviewWrap, { borderColor: softBorder, backgroundColor: softSurface }]}>
                       <Image source={{ uri: storyPhotoUri }} style={styles.storyPhotoPreview} contentFit="cover" />
                     </View>
                   ) : null}
@@ -251,12 +252,12 @@ export default function ProofHomeScreen() {
                     placeholderTextColor={mutedText}
                     multiline
                     maxLength={180}
-                    style={[styles.storyInput, styles.storyCommentInput, { borderColor: border, backgroundColor: surface, color: text }]}
+                    style={[styles.storyInput, styles.storyCommentInput, { borderColor: softBorder, backgroundColor: softSurface, color: text }]}
                   />
                   <Button label="Ajouter à la mini-story" variant="secondary" onPress={submitStoryContribution} />
 
                   {storySubmitted ? (
-                    <View style={[styles.storySuccess, { borderColor: `${tint}44`, backgroundColor: `${tint}12` }]}>
+                    <View style={[styles.storySuccess, { borderColor: `${tint}44`, backgroundColor: `${tint}10` }]}>
                       <ThemedText type="defaultSemiBold" style={{ color: tint }}>
                         Ajout envoyé au prêteur
                       </ThemedText>
@@ -320,11 +321,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   content: {
-    gap: 12,
-    paddingBottom: 16,
+    gap: 14,
+    paddingBottom: 20,
   },
   card: {
-    gap: 10,
+    gap: 12,
   },
   statusRow: {
     flexDirection: 'row',
@@ -348,7 +349,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   infoRow: {
-    gap: 3,
+    gap: 4,
   },
   storyInput: {
     borderWidth: 1,
@@ -358,9 +359,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   storyCommentInput: {
-    minHeight: 82,
+    minHeight: 88,
     textAlignVertical: 'top',
-    paddingTop: 10,
+    paddingTop: 11,
   },
   storyPhotoPreviewWrap: {
     borderWidth: 1,
@@ -372,13 +373,13 @@ const styles = StyleSheet.create({
     height: 160,
   },
   storyPhotoActions: {
-    gap: 8,
+    gap: 10,
   },
   storySuccess: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
   },
 });

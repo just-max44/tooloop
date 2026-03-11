@@ -15,15 +15,18 @@ import { Card } from '@/components/ui/card';
 import { Radius } from '@/constants/theme';
 import { useProofBackToInbox } from '@/hooks/use-proof-back-to-inbox';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { getExchangePassByLoanId, INBOX_LOANS, useBackendDataVersion } from '@/lib/backend/data';
+import { getExchangePassByLoanId } from '@/lib/backend/data';
 import { showAppNotice } from '@/stores/app-notice-store';
-import { getStepQrPayload, getStepVerifierCode, isExchangeQrPayload } from '@/stores/proof/pass-auth';
+import { useBackendStore } from '@/stores/backend-store';
 import {
     formatReturnDateLabel,
     getPickupReturnDateISO,
+    getStepQrPayload,
+    getStepVerifierCode,
     isBorrowerPickupAccepted,
+    isExchangeQrPayload,
     setPickupReturnDateISO,
-} from '@/stores/proof/return-timing-store';
+} from '@/stores/proof';
 
 type ValidationMethod = 'qr' | 'code';
 
@@ -41,7 +44,7 @@ function toISODate(dateValue: Date) {
 }
 
 export default function PickupProofScreen() {
-  useBackendDataVersion();
+  const INBOX_LOANS = useBackendStore((s) => s.inboxLoans);
   const router = useRouter();
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
   useProofBackToInbox();
@@ -53,6 +56,8 @@ export default function PickupProofScreen() {
   const mutedText = useThemeColor({}, 'mutedText');
   const text = useThemeColor({}, 'text');
   const tint = useThemeColor({}, 'tint');
+  const softSurface = `${surface}F2`;
+  const softBorder = `${border}AA`;
 
   const [method, setMethod] = useState<ValidationMethod>('qr');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -67,7 +72,7 @@ export default function PickupProofScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const lastScanRef = useRef<{ data: string; at: number }>({ data: '', at: 0 });
 
-  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [loanId]);
+  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [INBOX_LOANS, loanId]);
   const pass = useMemo(() => (loanId ? getExchangePassByLoanId(loanId) : undefined), [loanId]);
   const isBorrower = loan?.direction === 'incoming';
   const isLender = loan?.direction === 'outgoing';
@@ -310,7 +315,7 @@ export default function PickupProofScreen() {
               </ThemedText>
               <View style={styles.returnDateRow}>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>Date de retour prévue</ThemedText>
-                <View style={[styles.returnDateDisplay, { borderColor: border, backgroundColor: surface }]}>
+                <View style={[styles.returnDateDisplay, { borderColor: softBorder, backgroundColor: softSurface }]}>
                   <ThemedText type="defaultSemiBold">{dateLabel}</ThemedText>
                 </View>
                 {isLender ? (
@@ -325,7 +330,7 @@ export default function PickupProofScreen() {
                   </ThemedText>
                 )}
                 {isBorrower && !hasReturnDate ? (
-                  <View style={[styles.blockedHintWrap, { borderColor: border, backgroundColor: surface }]}>
+                  <View style={[styles.blockedHintWrap, { borderColor: softBorder, backgroundColor: softSurface }]}>
                     <ThemedText type="defaultSemiBold" style={{ color: text, fontSize: 12 }}>
                       Action bloquée côté emprunteur
                     </ThemedText>
@@ -363,12 +368,13 @@ export default function PickupProofScreen() {
               <View style={styles.methodRow}>
                 <Pressable
                   onPress={() => setMethod('qr')}
-                  style={[
+                  style={({ pressed }) => [
                     styles.methodButton,
                     {
-                      borderColor: method === 'qr' ? tint : border,
-                      backgroundColor: method === 'qr' ? `${tint}18` : surface,
+                      borderColor: method === 'qr' ? tint : softBorder,
+                      backgroundColor: method === 'qr' ? `${tint}14` : softSurface,
                     },
+                    pressed ? styles.pressedFeedback : null,
                   ]}>
                   <ThemedText type="defaultSemiBold" style={{ color: method === 'qr' ? tint : text }}>
                     QR
@@ -376,12 +382,13 @@ export default function PickupProofScreen() {
                 </Pressable>
                 <Pressable
                   onPress={() => setMethod('code')}
-                  style={[
+                  style={({ pressed }) => [
                     styles.methodButton,
                     {
-                      borderColor: method === 'code' ? tint : border,
-                      backgroundColor: method === 'code' ? `${tint}18` : surface,
+                      borderColor: method === 'code' ? tint : softBorder,
+                      backgroundColor: method === 'code' ? `${tint}14` : softSurface,
                     },
+                    pressed ? styles.pressedFeedback : null,
                   ]}>
                   <ThemedText type="defaultSemiBold" style={{ color: method === 'code' ? tint : text }}>
                     Code
@@ -392,7 +399,7 @@ export default function PickupProofScreen() {
               {method === 'qr' ? (
                 <>
                   {isLender ? (
-                    <View style={[styles.qrWrap, { borderColor: border, backgroundColor: surface }]}>
+                    <View style={[styles.qrWrap, { borderColor: softBorder, backgroundColor: softSurface }]}>
                       <QRCode value={qrPayload} size={196} color={text} backgroundColor={surface} />
                     </View>
                   ) : null}
@@ -415,7 +422,7 @@ export default function PickupProofScreen() {
                         </ThemedText>
                       ) : null}
                       {isScannerOpen ? (
-                        <View style={[styles.scannerWrap, { borderColor: border }]}>
+                        <View style={[styles.scannerWrap, { borderColor: softBorder }]}>
                           <CameraView
                             style={styles.scannerPreview}
                             facing="back"
@@ -454,7 +461,7 @@ export default function PickupProofScreen() {
                         autoCorrect={false}
                         maxLength={8}
                         editable={hasReturnDate}
-                        style={[styles.codeInput, { borderColor: border, color: text, backgroundColor: surface }]}
+                        style={[styles.codeInput, { borderColor: softBorder, color: text, backgroundColor: softSurface }]}
                       />
                       <Button label="Valider le code" variant="secondary" disabled={!hasReturnDate} onPress={validateCode} />
                       {!hasReturnDate ? (
@@ -495,7 +502,11 @@ export default function PickupProofScreen() {
             {isBorrower ? (
               <Card style={styles.card}>
                 <Pressable
-                  style={[styles.checkItem, { borderColor: border, backgroundColor: surface }]}
+                  style={({ pressed }) => [
+                    styles.checkItem,
+                    { borderColor: softBorder, backgroundColor: softSurface },
+                    pressed ? styles.pressedFeedback : null,
+                  ]}
                   onPress={() => {
                     setPickupChecked((value) => !value);
                     setContinueHint(null);
@@ -520,7 +531,7 @@ export default function PickupProofScreen() {
                 />
 
                 {continueHint ? (
-                  <View style={[styles.warningInline, { borderColor: border, backgroundColor: surface }]}>
+                  <View style={[styles.warningInline, { borderColor: softBorder, backgroundColor: softSurface }]}> 
                     <MaterialIcons name="info-outline" size={16} color={mutedText} />
                     <ThemedText style={{ color: mutedText, fontSize: 12 }}>{continueHint}</ThemedText>
                   </View>
@@ -563,11 +574,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   content: {
-    gap: 12,
-    paddingBottom: 16,
+    gap: 14,
+    paddingBottom: 20,
   },
   card: {
-    gap: 10,
+    gap: 12,
   },
   returnDateRow: {
     gap: 8,
@@ -588,11 +599,11 @@ const styles = StyleSheet.create({
   },
   methodRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
   methodButton: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 44,
     borderRadius: Radius.md,
     borderWidth: 1,
     alignItems: 'center',
@@ -601,7 +612,7 @@ const styles = StyleSheet.create({
   qrWrap: {
     borderWidth: 1,
     borderRadius: Radius.lg,
-    padding: 12,
+    padding: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -622,8 +633,8 @@ const styles = StyleSheet.create({
   codeInput: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    minHeight: 44,
-    paddingHorizontal: 12,
+    minHeight: 46,
+    paddingHorizontal: 13,
     fontSize: 15,
   },
   validationRow: {
@@ -634,9 +645,9 @@ const styles = StyleSheet.create({
   successInline: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    minHeight: 40,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -644,9 +655,9 @@ const styles = StyleSheet.create({
   warningInline: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    minHeight: 40,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -654,13 +665,16 @@ const styles = StyleSheet.create({
   checkItem: {
     borderWidth: 1,
     borderRadius: 12,
-    minHeight: 44,
-    paddingHorizontal: 12,
+    minHeight: 46,
+    paddingHorizontal: 13,
     justifyContent: 'center',
   },
   checkLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  pressedFeedback: {
+    opacity: 0.88,
   },
 });
