@@ -1,6 +1,6 @@
 # Tooloop — Statut des fonctionnalités (MVP)
 
-Dernière mise à jour : 2026-02-23
+Dernière mise à jour : 2026-03-11
 
 ## Légende
 
@@ -64,6 +64,15 @@ Dernière mise à jour : 2026-02-23
 
 - ⛔ Chat temps réel (pas encore implémenté)
 - 🟡 Inbox actuelle = centre de demandes/statuts (pas une conversation live)
+- ✅ Envoi message résilient: en cas d'échec réseau, le brouillon est restauré et une erreur utilisateur est affichée
+
+## Correctifs parcours échange (2026-03-11)
+
+- ✅ Finalisation retour atomique: l'état local de validation retour n'est appliqué qu'après succès serveur de clôture
+- ✅ Action principale Inbox alignée: les états `pending` et `refused` n'ouvrent plus à tort le flux preuve
+- ✅ Libellés Inbox clarifiés: `En attente de réponse` et `Demande refusée` sur états non actionnables
+- ✅ Robustesse chat: rollback du brouillon + notification d'erreur en cas d'échec d'envoi
+- ✅ Couverture tests ajoutée sur les chemins d'erreur retour/chat
 
 ## 9) Admin / pilotage
 

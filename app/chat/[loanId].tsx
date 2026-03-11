@@ -9,12 +9,20 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { getExchangeMessagesByLoanId, getExchangePassByLoanId, INBOX_LOANS, useBackendDataVersion } from '@/lib/backend/data';
+import {
+    getExchangeMessagesByLoanId,
+    getExchangePassByLoanId,
+    sendExchangeMessageRemote,
+} from '@/lib/backend/data';
+import { sendChatMessageResilient } from '@/lib/domain/exchange-actions';
+import { canOpenChat, getChatBlockedReason } from '@/lib/domain/exchange-status';
 import { notifyEvent } from '@/lib/notifications/events';
-import { getEffectiveLoanState, isExchangeRefused } from '@/stores/proof/closure-store';
+import { showAppNotice } from '@/stores/app-notice-store';
+import { useBackendStore } from '@/stores/backend-store';
 
 export default function ExchangeChatScreen() {
-  useBackendDataVersion();
+  const INBOX_LOANS = useBackendStore((s) => s.inboxLoans);
+  const EXCHANGE_CHAT_MESSAGES = useBackendStore((s) => s.exchangeChatMessages);
   const router = useRouter();
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
   const insets = useSafeAreaInsets();
@@ -25,18 +33,27 @@ export default function ExchangeChatScreen() {
   const surface = useThemeColor({}, 'surface');
   const text = useThemeColor({}, 'text');
   const tint = useThemeColor({}, 'tint');
+  const softSurface = `${surface}F2`;
+  const softBorder = `${border}AA`;
 
-  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [loanId]);
+  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [INBOX_LOANS, loanId]);
   const pass = useMemo(() => (loanId ? getExchangePassByLoanId(loanId) : undefined), [loanId]);
-  const initialMessages = useMemo(() => (loanId ? getExchangeMessagesByLoanId(loanId) : []), [loanId]);
+  const initialMessages = useMemo(
+    () => (loanId ? getExchangeMessagesByLoanId(loanId) : []),
+    [EXCHANGE_CHAT_MESSAGES, loanId]
+  );
   const loanState = useMemo(() => {
     if (!loan) {
       return undefined;
     }
-    return getEffectiveLoanState(loan.id, loan.state);
+    return loan.state;
   }, [loan]);
-  const isRefused = useMemo(() => (loanId ? isExchangeRefused(loanId) : false), [loanId]);
-  const chatAllowed = !isRefused && (loanState === 'accepted' || loanState === 'completed');
+  const chatAllowed = useMemo(() => {
+    if (!loanState) {
+      return false;
+    }
+    return canOpenChat(loanState);
+  }, [loanState]);
 
   const [messages, setMessages] = useState(initialMessages);
   const [draftMessage, setDraftMessage] = useState('');
@@ -77,7 +94,7 @@ export default function ExchangeChatScreen() {
 
   const canSend = draftMessage.trim().length > 0;
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!canSend || !loanId) {
       return;
     }
@@ -85,38 +102,28 @@ export default function ExchangeChatScreen() {
     const trimmedText = draftMessage.trim();
     setDraftMessage('');
 
-    setMessages((current) => [
-      ...current,
-      {
-        id: `${loanId}-${Date.now()}`,
-        loanId,
-        sender: 'me',
-        text: trimmedText,
-        timeLabel: 'Maintenant',
+    const didSend = await sendChatMessageResilient({
+      loanId,
+      text: trimmedText,
+      sendRemotely: sendExchangeMessageRemote,
+      restoreDraft: setDraftMessage,
+      notifyRemoteFailure: () => {
+        showAppNotice('Envoi impossible pour le moment. Réessaie dans quelques instants.', 'error');
       },
-    ]);
+    });
 
-    setTimeout(() => {
-      setMessages((current) => [
-        ...current,
-        {
-          id: `${loanId}-${Date.now()}-other`,
-          loanId,
-          sender: 'other',
-          text: 'Bien reçu 👍',
-          timeLabel: 'À l’instant',
-        },
-      ]);
+    if (!didSend) {
+      return;
+    }
 
-      if (loan) {
-        void notifyEvent({
-          type: 'new_message_received',
-          loanId: loan.id,
-          objectName: loan.objectName,
-          otherUserName: loan.otherUserName,
-        });
-      }
-    }, 1200);
+    if (loan) {
+      void notifyEvent({
+        type: 'new_message_received',
+        loanId: loan.id,
+        objectName: loan.objectName,
+        otherUserName: loan.otherUserName,
+      });
+    }
   };
 
   if (!loan || !chatAllowed) {
@@ -126,9 +133,7 @@ export default function ExchangeChatScreen() {
           <Card style={styles.card}>
             <ThemedText type="subtitle">Chat indisponible</ThemedText>
             <ThemedText style={{ color: mutedText }}>
-              {isRefused
-                ? 'Cette demande a été refusée.'
-                : 'Le chat est disponible uniquement après acceptation de la demande.'}
+              {getChatBlockedReason(loanState ?? 'pending')}
             </ThemedText>
             <Button label="Retour Échanges" onPress={() => router.push('/(tabs)/inbox')} />
           </Card>
@@ -184,8 +189,8 @@ export default function ExchangeChatScreen() {
                       style={[
                         styles.messageBubble,
                         {
-                          backgroundColor: isMine ? `${tint}20` : surface,
-                          borderColor: isMine ? `${tint}55` : border,
+                          backgroundColor: isMine ? `${tint}18` : softSurface,
+                          borderColor: isMine ? `${tint}55` : softBorder,
                         },
                       ]}>
                       <ThemedText style={{ color: text }}>{message.text}</ThemedText>
@@ -200,7 +205,7 @@ export default function ExchangeChatScreen() {
           <View
             style={[
               styles.composerWrap,
-              { borderColor: border, backgroundColor: surface, paddingBottom: Math.max(insets.bottom, Spacing.sm) },
+              { borderColor: softBorder, backgroundColor: softSurface, paddingBottom: Math.max(insets.bottom, Spacing.sm) },
             ]}>
             <TextInput
               value={draftMessage}
@@ -216,11 +221,12 @@ export default function ExchangeChatScreen() {
               disabled={!canSend}
               accessibilityRole="button"
               accessibilityLabel="Envoyer le message"
-              style={[
+              style={({ pressed }) => [
                 styles.sendButton,
                 {
                   backgroundColor: canSend ? tint : `${tint}55`,
                 },
+                pressed && canSend ? styles.pressedFeedback : null,
               ]}>
               <ThemedText type="defaultSemiBold" style={styles.sendButtonLabel}>
                 Envoyer
@@ -244,23 +250,24 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
   },
   chatLayout: {
     flex: 1,
-    gap: Spacing.sm,
+    gap: Spacing.md,
   },
   headerCard: {
-    gap: 4,
+    gap: 8,
   },
   card: {
-    gap: 6,
+    gap: 8,
   },
   messagesScroll: {
     flex: 1,
   },
   messagesContent: {
-    gap: 8,
-    paddingBottom: 8,
+    gap: 12,
+    paddingBottom: 12,
   },
   messageRow: {
     flexDirection: 'row',
@@ -275,9 +282,9 @@ const styles = StyleSheet.create({
     maxWidth: '82%',
     borderRadius: Radius.md,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 4,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    gap: 5,
   },
   messageTime: {
     fontSize: 11,
@@ -293,18 +300,18 @@ const styles = StyleSheet.create({
   composerWrap: {
     borderWidth: 1,
     borderRadius: Radius.lg,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    gap: 10,
   },
   composerInput: {
-    minHeight: 40,
+    minHeight: 44,
     maxHeight: 120,
     fontSize: 15,
     textAlignVertical: 'top',
   },
   sendButton: {
-    minHeight: 42,
+    minHeight: 44,
     borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -312,5 +319,8 @@ const styles = StyleSheet.create({
   },
   sendButtonLabel: {
     color: '#FFFFFF',
+  },
+  pressedFeedback: {
+    opacity: 0.9,
   },
 });

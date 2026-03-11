@@ -1,4 +1,6 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
@@ -9,24 +11,41 @@ import { ThemedView } from '@/components/themed-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { INBOX_LOANS, refreshBackendData, useBackendDataVersion, type LoanDirection } from '@/lib/backend/data';
-import { notifyEvent } from '@/lib/notifications/events';
-import { isFeedbackSubmitted } from '@/stores/feedback-store';
-import { acceptExchange, getEffectiveLoanState, isExchangeRefused, refuseExchange } from '@/stores/proof/closure-store';
 import {
-    getPickupAcceptedAtLabel,
-    getPickupReturnDateLabel,
-    getReturnAcceptedAtLabel,
-} from '@/stores/proof/return-timing-store';
+    refreshBackendData,
+    setLoanStateRemote,
+} from '@/lib/backend/data';
+import {
+    canAcceptOrRefuseAsLender,
+    canOpenFeedback,
+    type ExchangeFilter,
+    getExchangeStatusBadge,
+    getPrimaryAction,
+    getRoleLabel,
+    isLoanVisibleInFilter,
+} from '@/lib/domain/exchange-status';
+import { notifyEvent } from '@/lib/notifications/events';
+import { useBackendStore } from '@/stores/backend-store';
+import { isFeedbackSubmitted } from '@/stores/feedback-store';
 
-type ExchangeFilter = LoanDirection | 'completed';
+const FILTER_SEGMENTS: { value: ExchangeFilter; label: string }[] = [
+  { value: 'incoming', label: 'Emprunts' },
+  { value: 'outgoing', label: 'Pr\u00eats' },
+  { value: 'completed', label: 'Historique' },
+];
 
 export default function InboxScreen() {
-  useBackendDataVersion();
+  const INBOX_LOANS = useBackendStore((s) => s.inboxLoans);
+  const DISCOVER_OBJECTS = useBackendStore((s) => s.discoverObjects);
+  const EXCHANGE_CHAT_MESSAGES = useBackendStore((s) => s.exchangeChatMessages);
   const router = useRouter();
   const [filter, setFilter] = useState<ExchangeFilter>('incoming');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [openMenuLoanId, setOpenMenuLoanId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const background = useThemeColor({}, 'background');
   const text = useThemeColor({}, 'text');
@@ -35,23 +54,18 @@ export default function InboxScreen() {
   const surface = useThemeColor({}, 'surface');
   const tint = useThemeColor({}, 'tint');
   const danger = useThemeColor({}, 'danger');
+  const softSurface = `${surface}F2`;
+  const softBorder = `${border}AA`;
   void refreshKey;
 
   const filtered = INBOX_LOANS.filter((loan) => {
-    const loanState = getEffectiveLoanState(loan.id, loan.state);
-
-    if (filter === 'completed') {
-      return loanState === 'completed';
-    }
-
-    return loan.direction === filter && loanState !== 'completed';
+    const loanState = loan.state;
+    return isLoanVisibleInFilter(loanState, loan.direction, filter);
   });
   const hasItems = filtered.length > 0;
   const pendingFeedbackCount = INBOX_LOANS.filter((loan) => {
-    const loanState = getEffectiveLoanState(loan.id, loan.state);
-    const isRefused = isExchangeRefused(loan.id);
-    const isSuccessfulCompleted = loanState === 'completed' && !isRefused;
-    return isSuccessfulCompleted && !isFeedbackSubmitted(loan.id);
+    const loanState = loan.state;
+    return canOpenFeedback(loanState, isFeedbackSubmitted(loan.id));
   }).length;
 
   useFocusEffect(
@@ -78,309 +92,205 @@ export default function InboxScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={tint} colors={[tint]} />}>
           <Card style={styles.card}>
-            <ThemedText type="title">Échanges</ThemedText>
-            <ThemedText style={[styles.subtitle, { color: mutedText }]}>Suis tes objets prêtés et empruntés.</ThemedText>
+            <ThemedText type="title">\u00c9changes en cours</ThemedText>
+            <ThemedText type="caption">Chaque carte correspond \u00e0 un objet.</ThemedText>
             {filter === 'completed' ? (
               <Badge
                 label={
                   pendingFeedbackCount > 0
-                    ? `${pendingFeedbackCount} évaluation${pendingFeedbackCount > 1 ? 's' : ''} en attente`
-                    : 'Toutes les évaluations sont envoyées'
+                    ? `${pendingFeedbackCount} \u00e9valuation${pendingFeedbackCount > 1 ? 's' : ''} en attente`
+                    : 'Toutes les \u00e9valuations sont envoy\u00e9es'
                 }
                 variant={pendingFeedbackCount > 0 ? 'danger' : 'primary'}
               />
             ) : null}
 
-            <View style={styles.segmentRow}>
-              <Pressable
-                onPress={() => setFilter('incoming')}
-                accessibilityRole="button"
-                accessibilityLabel="Afficher les objets empruntés"
-                accessibilityState={{ selected: filter === 'incoming' }}
-                style={[
-                  styles.segment,
-                  {
-                    borderColor: filter === 'incoming' ? tint : border,
-                    backgroundColor: filter === 'incoming' ? `${tint}22` : surface,
-                  },
-                ]}>
-                <ThemedText type="defaultSemiBold" style={{ color: filter === 'incoming' ? tint : text }}>
-                  Empruntés
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={() => setFilter('outgoing')}
-                accessibilityRole="button"
-                accessibilityLabel="Afficher les objets prêtés"
-                accessibilityState={{ selected: filter === 'outgoing' }}
-                style={[
-                  styles.segment,
-                  {
-                    borderColor: filter === 'outgoing' ? tint : border,
-                    backgroundColor: filter === 'outgoing' ? `${tint}22` : surface,
-                  },
-                ]}>
-                <ThemedText type="defaultSemiBold" style={{ color: filter === 'outgoing' ? tint : text }}>
-                  Prêtés
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={() => setFilter('completed')}
-                accessibilityRole="button"
-                accessibilityLabel="Afficher les échanges terminés"
-                accessibilityState={{ selected: filter === 'completed' }}
-                style={[
-                  styles.segment,
-                  {
-                    borderColor: filter === 'completed' ? tint : border,
-                    backgroundColor: filter === 'completed' ? `${tint}22` : surface,
-                  },
-                ]}>
-                <ThemedText type="defaultSemiBold" style={{ color: filter === 'completed' ? tint : text }}>
-                  Terminés
-                </ThemedText>
-              </Pressable>
-            </View>
+            <SegmentedControl
+              segments={FILTER_SEGMENTS}
+              selected={filter}
+              onChange={setFilter}
+            />
           </Card>
 
           <View style={styles.listWrap}>
             {!hasItems ? (
-              <Card style={styles.emptyCard}>
-                <ThemedText type="defaultSemiBold">Aucun échange ici pour le moment</ThemedText>
-                <ThemedText style={{ color: mutedText }}>
-                  Change d’onglet ou lance un nouvel emprunt depuis Découvrir.
-                </ThemedText>
-              </Card>
+              <EmptyState
+                title="Aucun \u00e9change ici"
+                description="Change d'onglet ou trouve un objet depuis D\u00e9couvrir."
+                icon="swap-horiz"
+              />
             ) : null}
             {filtered.map((loan) => {
-              const loanState = getEffectiveLoanState(loan.id, loan.state);
-              const isPending = loanState === 'pending';
+              const loanState = loan.state;
               const isAccepted = loanState === 'accepted';
               const isCompleted = loanState === 'completed';
-              const isRefused = isExchangeRefused(loan.id);
+              const isRefused = loanState === 'refused';
               const isSuccessfulCompleted = isCompleted && !isRefused;
-              const savedReturnDateLabel = getPickupReturnDateLabel(loan.id);
-              const hasSavedReturnDate = savedReturnDateLabel.trim().length > 0;
-              const pickupAcceptedDateLabel = getPickupAcceptedAtLabel(loan.id);
-              const returnAcceptedDateLabel = getReturnAcceptedAtLabel(loan.id);
               const isCompletedTab = filter === 'completed';
               const feedbackSubmitted = isFeedbackSubmitted(loan.id);
-              const needsFeedback = isSuccessfulCompleted && !feedbackSubmitted;
-              const canAcceptAsLender = isPending && loan.direction === 'outgoing';
-              const canRefuseAsLender = isPending && loan.direction === 'outgoing';
-              const chatAllowed = !isRefused && (isAccepted || isCompleted);
-              const showOnlyEvaluateInCompleted = isCompletedTab && needsFeedback;
-              const hideAllActionsInCompleted = isCompletedTab && isRefused;
+              const canAcceptAsLender = canAcceptOrRefuseAsLender(loanState, loan.direction);
+              const canRefuseAsLender = canAcceptAsLender;
+              const roleLabel = getRoleLabel(loan.direction);
+              const { label: statusLabel, variant: statusVariant } = getExchangeStatusBadge(loanState);
+              const objectPreview = DISCOVER_OBJECTS.find((item) => item.title === loan.objectName);
+              const lastMessage = EXCHANGE_CHAT_MESSAGES.filter((message) => message.loanId === loan.id).at(-1);
+              const primaryAction = getPrimaryAction(loanState, feedbackSubmitted);
 
-              const statusLabel = isRefused
-                ? 'Refusé'
-                : loanState === 'pending'
-                  ? 'En attente'
-                  : loanState === 'accepted'
-                    ? 'Accepté'
-                    : 'Terminé';
+              const openMainAction = () => {
+                if (primaryAction === 'feedback') {
+                  router.push({ pathname: '/feedback/[loanId]', params: { loanId: loan.id } });
+                  return;
+                }
 
-              const roleLabel = loan.direction === 'incoming' ? 'Tu empruntes' : 'Tu prêtes';
-              const otherLabel = loan.direction === 'incoming' ? `Avec ${loan.otherUserName}` : `Pour ${loan.otherUserName}`;
+                if (primaryAction === 'chat') {
+                  router.push({ pathname: '/chat/[loanId]', params: { loanId: loan.id } });
+                  return;
+                }
 
-              const nextStepTitle = isRefused
-                ? 'Échange clôturé'
-                : canAcceptAsLender
-                  ? 'Action requise'
-                  : needsFeedback
-                    ? 'Action requise'
-                    : isAccepted
-                      ? 'Prochaine étape'
-                      : 'Statut';
+                router.push({ pathname: '/proof/[loanId]', params: { loanId: loan.id } });
+              };
 
-              const nextStepText = isRefused
-                ? 'Cette demande a été refusée. Aucun chat ou pass actif.'
-                : canAcceptAsLender
-                  ? 'Accepte ou refuse cette demande pour débloquer la suite.'
-                  : needsFeedback
-                    ? 'Envoie ton évaluation pour finaliser la confiance.'
-                    : isAccepted
-                      ? 'Ouvre le pass d’échange pour confirmer la remise et le retour.'
-                      : 'En attente de réponse du prêteur.';
-
-              const nextStepTone = isRefused ? danger : canAcceptAsLender || needsFeedback ? danger : tint;
-              const nextStepBackground = isRefused ? `${danger}10` : canAcceptAsLender || needsFeedback ? `${danger}0F` : `${tint}12`;
-              const nextStepBorder = isRefused ? `${danger}44` : canAcceptAsLender || needsFeedback ? `${danger}44` : `${tint}44`;
-
-              const dueText = isRefused
-                ? 'Demande refusée · échange clôturé'
-                : isSuccessfulCompleted && feedbackSubmitted
-                  ? 'Échange terminé · évaluation envoyée'
-                  : isSuccessfulCompleted
-                    ? 'Échange terminé · évaluation en attente'
-                : loan.state === 'pending' && loanState === 'accepted'
-                  ? 'Prêt validé · pass disponible'
-                  : loan.dueText;
-              const hideDueTextAboveNextStep = !isCompletedTab && /retour prévu/i.test(dueText);
+              const primaryActionLabel =
+                primaryAction === 'feedback'
+              const primaryActionDisabled = primaryAction === 'none';
+                  ? 'Donner mon avis'
+                  : primaryAction === 'chat'
+                if (primaryAction === 'none') {
+                  return;
+                }
+                    ? 'Continuer dans le chat'
+                    : 'Ouvrir le pass';
 
               return (
-              <Card
-                key={loan.id}
-                style={[
-                  styles.requestCard,
-                  isCompletedTab && isRefused
-                    ? { borderColor: `${danger}66`, backgroundColor: `${danger}10` }
-                    : null,
-                  isCompletedTab && isSuccessfulCompleted
-                    ? { borderColor: `${tint}66`, backgroundColor: `${tint}14` }
-                    : null,
-                ]}>
-                <View style={styles.requestHeader}>
-                  <View style={styles.headerMainBlock}>
-                    <ThemedText type="defaultSemiBold">{loan.objectName}</ThemedText>
-                    <ThemedText style={{ color: mutedText, fontSize: 13 }}>{otherLabel}</ThemedText>
-                  </View>
-                  <Badge
-                    label={statusLabel}
-                    variant={isRefused ? 'danger' : (loanState === 'accepted' || isSuccessfulCompleted) ? 'primary' : 'neutral'}
-                  />
-                </View>
-
-                <View style={styles.metaRow}>
-                  <Badge label={roleLabel} variant="neutral" />
-                </View>
-
-                {!hideDueTextAboveNextStep ? (
-                  <ThemedText style={{ color: mutedText, fontSize: 13 }}>{dueText}</ThemedText>
-                ) : null}
-
-                <View style={[styles.nextStepCard, { borderColor: nextStepBorder, backgroundColor: nextStepBackground }]}>
-                  <ThemedText type="defaultSemiBold" style={{ color: nextStepTone }}>
-                    {nextStepTitle}
-                  </ThemedText>
-                  <ThemedText style={{ color: mutedText, fontSize: 12 }}>{nextStepText}</ThemedText>
-                </View>
-
-                {isCompletedTab && isSuccessfulCompleted ? (
-                  <>
-                    {pickupAcceptedDateLabel ? (
-                      <ThemedText style={{ color: mutedText, fontSize: 13 }}>Date de remise le {pickupAcceptedDateLabel}</ThemedText>
-                    ) : null}
-                    {(returnAcceptedDateLabel || hasSavedReturnDate) ? (
-                      <ThemedText style={{ color: mutedText, fontSize: 13 }}>
-                        Date de retour le {returnAcceptedDateLabel || savedReturnDateLabel}
-                      </ThemedText>
-                    ) : null}
-                  </>
-                ) : hasSavedReturnDate && !isRefused ? (
-                  <ThemedText style={{ color: mutedText, fontSize: 13 }}>Date de retour convenue le {savedReturnDateLabel}</ThemedText>
-                ) : null}
-
-                {isCompletedTab && needsFeedback ? (
-                  <View style={[styles.feedbackReminder, { borderColor: `${danger}44`, backgroundColor: `${danger}0F` }]}>
-                    <ThemedText type="defaultSemiBold" style={{ color: danger }}>
-                      Pense à envoyer ton évaluation
-                    </ThemedText>
-                    <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                      Elle finalise la confiance de l’échange.
-                    </ThemedText>
-                  </View>
-                ) : null}
-
-                {isCompletedTab && isSuccessfulCompleted && feedbackSubmitted ? (
-                  <View style={[styles.feedbackDone, { borderColor: `${tint}44`, backgroundColor: `${tint}12` }]}>
-                    <ThemedText type="defaultSemiBold" style={{ color: tint }}>
-                      Évaluation enregistrée
-                    </ThemedText>
-                  </View>
-                ) : null}
-
-                {(canAcceptAsLender || canRefuseAsLender) && !isCompletedTab ? (
-                  <View style={styles.pendingActionsRow}>
-                    {canAcceptAsLender ? (
-                      <Button
-                        label="Accepter"
-                        variant="primary"
-                        style={styles.acceptAction}
-                        accessibilityLabel={`Accepter la demande pour ${loan.objectName}`}
-                        onPress={() => {
-                          acceptExchange(loan.id);
-                          void notifyEvent({
-                            type: 'loan_request_accepted',
-                            loanId: loan.id,
-                            objectName: loan.objectName,
-                            otherUserName: loan.otherUserName,
-                          });
-                          setRefreshKey((current) => current + 1);
-                        }}
-                      />
-                    ) : null}
-                    {canRefuseAsLender ? (
-                      <Button
-                        label="Refuser"
-                        variant="secondary"
-                        style={[
-                          styles.refuseAction,
-                          {
-                            borderColor: `${danger}66`,
-                            backgroundColor: `${danger}16`,
-                            elevation: 0,
-                            shadowOpacity: 0,
-                          },
-                        ]}
-                        textStyle={{ color: danger }}
-                        accessibilityLabel={`Refuser la demande pour ${loan.objectName}`}
-                        onPress={() => {
-                          refuseExchange(loan.id);
-                          setRefreshKey((current) => current + 1);
-                        }}
-                      />
-                    ) : null}
-                  </View>
-                ) : null}
-
-                {chatAllowed && !isCompletedTab ? (
-                  <Button
-                    label="Chat"
-                    variant="primary"
-                    style={styles.primaryAction}
-                    accessibilityLabel={`Ouvrir le chat pour ${loan.objectName}`}
-                    onPress={() => router.push({ pathname: '/chat/[loanId]', params: { loanId: loan.id } })}
-                  />
-                ) : !isCompletedTab && !hideAllActionsInCompleted && !showOnlyEvaluateInCompleted ? (
-                  <ThemedText style={{ color: mutedText, fontSize: 12 }}>
-                    {isRefused ? 'Échange refusé · chat fermé.' : 'Chat disponible après acceptation de la demande.'}
-                  </ThemedText>
-                ) : null}
-
-                {showOnlyEvaluateInCompleted ? (
-                  <Button
-                    label="Évaluer maintenant"
-                    variant="primary"
-                    style={styles.secondaryActionButton}
-                    textStyle={styles.secondaryActionText}
-                    accessibilityLabel={`Évaluer l’échange pour ${loan.objectName}`}
-                    onPress={() => router.push({ pathname: '/feedback/[loanId]', params: { loanId: loan.id } })}
-                  />
-                ) : !isCompletedTab && (isAccepted || isCompleted) ? (
-                  <View style={styles.secondaryActionsRow}>
-                    <Button
-                      label="Pass d’échange"
-                      variant="secondary"
-                      style={styles.secondaryActionButton}
-                      textStyle={styles.secondaryActionText}
-                      accessibilityLabel={`Ouvrir le pass d’échange pour ${loan.objectName}`}
-                      onPress={() => router.push({ pathname: '/proof/[loanId]', params: { loanId: loan.id } })}
+                <Card
+                  key={loan.id}
+                  style={[
+                    styles.requestCard,
+                    isCompletedTab && isRefused
+                      ? { borderColor: `${danger}66`, backgroundColor: `${danger}10` }
+                      : null,
+                    isCompletedTab && isSuccessfulCompleted
+                      ? { borderColor: `${tint}66`, backgroundColor: `${tint}14` }
+                      : null,
+                  ]}>
+                  <View style={styles.objectHeader}>
+                    <Image
+                      source={{
+                        uri:
+                    : primaryAction === 'proof'
+                      ? 'Ouvrir le pass'
+                      : loanState === 'refused'
+                        ? 'Demande refusée'
+                        : 'En attente de réponse';
+                          'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=600&q=80',
+                      }}
+                      style={styles.objectImage}
+                      contentFit="cover"
                     />
-                    {isSuccessfulCompleted ? (
-                      <Button
-                        label="Évaluer"
-                        variant="secondary"
-                        style={styles.secondaryActionButton}
-                        textStyle={styles.secondaryActionText}
-                        accessibilityLabel={`Évaluer l’échange pour ${loan.objectName}`}
-                        onPress={() => router.push({ pathname: '/feedback/[loanId]', params: { loanId: loan.id } })}
-                      />
-                    ) : null}
+                    <View style={styles.headerMainBlock}>
+                      <ThemedText type="defaultSemiBold">{loan.objectName}</ThemedText>
+                      <ThemedText type="caption">{roleLabel} \u00b7 {loan.otherUserName}</ThemedText>
+                      <View style={styles.metaRow}>
+                        <Badge label={statusLabel} variant={statusVariant} />
+                      </View>
+                    </View>
+                    <Pressable
+                      onPress={() => setOpenMenuLoanId((current) => (current === loan.id ? null : loan.id))}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Afficher les actions secondaires pour ${loan.objectName}`}
+                      hitSlop={8}
+                      style={({ pressed }) => [
+                        styles.cardMenuButton,
+                        { borderColor: softBorder, backgroundColor: softSurface },
+                        pressed ? styles.pressedFeedback : null,
+                      ]}>
+                      <MaterialIcons name="more-vert" size={18} color={text} />
+                    </Pressable>
                   </View>
-                ) : null}
-              </Card>
-            );
+
+                  <View style={[styles.lastMessageWrap, { borderColor: softBorder, backgroundColor: `${tint}0C` }]}>
+                    <ThemedText type="defaultSemiBold">Dernier message</ThemedText>
+                    <ThemedText type="caption">
+                      {lastMessage ? `${lastMessage.text} \u00b7 ${lastMessage.timeLabel}` : 'Aucun message pour le moment.'}
+                    </ThemedText>
+                  </View>
+
+                  {openMenuLoanId === loan.id ? (
+                    <View style={[styles.menuActionsWrap, { borderColor: softBorder, backgroundColor: softSurface }]}>
+                      {(canAcceptAsLender || canRefuseAsLender) && !isCompletedTab ? (
+                        <View style={styles.pendingActionsRow}>
+                          {canAcceptAsLender ? (
+                            <Button
+                              label="Accepter"
+                              variant="primary"
+                              style={styles.acceptAction}
+                              accessibilityLabel={`Accepter l'\u00e9change de ${loan.objectName}`}
+                              onPress={async () => {
+                                await setLoanStateRemote(loan.id, 'accepted').catch(() => {});
+                                void notifyEvent({
+                                  type: 'loan_request_accepted',
+                                  loanId: loan.id,
+                                  objectName: loan.objectName,
+                                  otherUserName: loan.otherUserName,
+                                });
+                                setOpenMenuLoanId(null);
+                                setRefreshKey((current) => current + 1);
+                              }}
+                            />
+                          ) : null}
+                          {canRefuseAsLender ? (
+                            <Button
+                              label="Refuser"
+                              variant="danger"
+                              style={styles.refuseAction}
+                              accessibilityLabel={`Refuser l'\u00e9change de ${loan.objectName}`}
+                              onPress={async () => {
+                                await setLoanStateRemote(loan.id, 'refused').catch(() => {});
+                                setOpenMenuLoanId(null);
+                                setRefreshKey((current) => current + 1);
+                              }}
+                            />
+                          ) : null}
+                        </View>
+                      ) : null}
+
+                      {!isRefused && (isAccepted || isCompleted) ? (
+                        <Button
+                          label="Pass d'\u00e9change"
+                          variant="secondary"
+                          size="sm"
+                          accessibilityLabel={`Voir le pass d'\u00e9change pour ${loan.objectName}`}
+                          onPress={() => {
+                            setOpenMenuLoanId(null);
+                            router.push({ pathname: '/proof/[loanId]', params: { loanId: loan.id } });
+                          }}
+                        />
+                      ) : null}
+
+                      {isSuccessfulCompleted ? (
+                        <Button
+                          label="\u00c9valuer"
+                          variant="secondary"
+                          size="sm"
+                          accessibilityLabel={`Donner une \u00e9valuation pour ${loan.objectName}`}
+                          onPress={() => {
+                            setOpenMenuLoanId(null);
+                            router.push({ pathname: '/feedback/[loanId]', params: { loanId: loan.id } });
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                  ) : null}
+
+                  <Button
+                    label={primaryActionLabel}
+                    variant="primary"
+                    accessibilityLabel={`Ouvrir la fiche d'\u00e9change de ${loan.objectName}`}
+                    accessibilityHint="Ouvre l'etape principale recommandee pour cet echange"
+                    onPress={openMainAction}
+                  />
+                </Card>
+              );
             })}
           </View>
         </ScrollView>
@@ -393,105 +303,79 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+                    disabled={primaryActionDisabled}
   container: {
     flex: 1,
   },
   content: {
-    padding: 16,
+    padding: Spacing.lg,
     width: '100%',
     maxWidth: 760,
     alignSelf: 'center',
+    paddingBottom: 120,
   },
   card: {
     width: '100%',
-    gap: 12,
-  },
-  subtitle: {
-    marginTop: 4,
-  },
-  segmentRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  segment: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: Spacing.md,
   },
   listWrap: {
-    marginTop: 12,
-    gap: 10,
+    marginTop: Spacing.md,
+    gap: Spacing.md,
   },
   requestCard: {
-    gap: 8,
+    gap: Spacing.md,
   },
-  emptyCard: {
-    gap: 6,
-  },
-  requestHeader: {
+  objectHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  objectImage: {
+    width: 56,
+    height: 56,
+    borderRadius: Radius.sm,
   },
   headerMainBlock: {
     flex: 1,
-    gap: 2,
+    gap: Spacing.xs,
   },
   metaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: Spacing.xs,
   },
-  nextStepCard: {
+  cardMenuButton: {
+    width: 34,
+    height: 34,
+    borderRadius: Radius.full,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  primaryAction: {
-    minHeight: 46,
-    marginTop: 2,
+  lastMessageWrap: {
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  menuActionsWrap: {
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
   },
   acceptAction: {
     flex: 1,
-    minHeight: 44,
   },
   refuseAction: {
     flex: 1,
-    minHeight: 44,
   },
   pendingActionsRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: Spacing.sm,
   },
-  feedbackReminder: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 2,
-  },
-  feedbackDone: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  secondaryActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  secondaryActionButton: {
-    flex: 1,
-    minHeight: 42,
-    paddingHorizontal: 10,
-  },
-  secondaryActionText: {
-    fontSize: 14,
+  pressedFeedback: {
+    opacity: 0.86,
   },
 });

@@ -12,17 +12,19 @@ import { Card } from '@/components/ui/card';
 import { Radius } from '@/constants/theme';
 import { useProofBackToInbox } from '@/hooks/use-proof-back-to-inbox';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { getObjectImageByLoanObjectName, INBOX_LOANS, useBackendDataVersion } from '@/lib/backend/data';
-import { closeExchange } from '@/stores/proof/closure-store';
-import { setReturnValidated } from '@/stores/proof/progress-store';
+import { getObjectImageByLoanObjectName, setLoanStateRemote } from '@/lib/backend/data';
+import { finalizeReturnReview } from '@/lib/domain/exchange-actions';
+import { showAppNotice } from '@/stores/app-notice-store';
+import { useBackendStore } from '@/stores/backend-store';
 import {
     getReturnConditionLabel,
     isBorrowerReturnAccepted,
     setBorrowerReturnAccepted,
-} from '@/stores/proof/return-timing-store';
+    setReturnValidated,
+} from '@/stores/proof';
 
 export default function ReturnReviewScreen() {
-  useBackendDataVersion();
+  const INBOX_LOANS = useBackendStore((s) => s.inboxLoans);
   const router = useRouter();
   const { loanId, as } = useLocalSearchParams<{ loanId: string; as?: string }>();
   useProofBackToInbox();
@@ -32,11 +34,13 @@ export default function ReturnReviewScreen() {
   const border = useThemeColor({}, 'border');
   const surface = useThemeColor({}, 'surface');
   const tint = useThemeColor({}, 'tint');
+  const softSurface = `${surface}F2`;
+  const softBorder = `${border}AA`;
 
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [loanId]);
+  const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [INBOX_LOANS, loanId]);
   const isBorrower = as === 'borrower' || loan?.direction === 'incoming';
   const alreadyAccepted = loanId ? isBorrowerReturnAccepted(loanId) : false;
   const returnConditionLabel = loanId ? getReturnConditionLabel(loanId) : '';
@@ -60,20 +64,25 @@ export default function ReturnReviewScreen() {
     );
   }
 
-  const submitAcceptance = () => {
-    if (!returnConditionLabel) {
-      return;
-    }
-
-    if (!acknowledged && !alreadyAccepted) {
-      return;
-    }
-
-    setBorrowerReturnAccepted(loanId, true);
-    setReturnValidated(loanId, true);
-    closeExchange(loanId);
-    setSubmitted(true);
-    router.replace({ pathname: '/feedback/[loanId]', params: { loanId } });
+  const submitAcceptance = async () => {
+    await finalizeReturnReview({
+      loanId,
+      acknowledged,
+      alreadyAccepted,
+      returnConditionLabel,
+      completeRemotely: async (targetLoanId) => {
+        await setLoanStateRemote(targetLoanId, 'completed');
+      },
+      markBorrowerReturnAccepted: setBorrowerReturnAccepted,
+      markReturnValidated: setReturnValidated,
+      notifyRemoteFailure: () => {
+        showAppNotice('Impossible de finaliser l\'échange pour le moment. Réessaie dans quelques instants.', 'error');
+      },
+      onCompleted: () => {
+        setSubmitted(true);
+        router.replace({ pathname: '/feedback/[loanId]', params: { loanId } });
+      },
+    });
   };
 
   return (
@@ -91,7 +100,7 @@ export default function ReturnReviewScreen() {
             {objectImageUri ? (
               <Image source={{ uri: objectImageUri }} style={styles.objectPhoto} contentFit="cover" />
             ) : (
-              <View style={[styles.photoFallback, { borderColor: border, backgroundColor: surface }]}>
+              <View style={[styles.photoFallback, { borderColor: softBorder, backgroundColor: softSurface }]}>
                 <MaterialIcons name="image" size={22} color={mutedText} />
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>Photo indisponible</ThemedText>
               </View>
@@ -118,7 +127,11 @@ export default function ReturnReviewScreen() {
           {!alreadyAccepted ? (
             <Card style={styles.card}>
               <Pressable
-                style={[styles.checkItem, { borderColor: border, backgroundColor: surface }]}
+                style={({ pressed }) => [
+                  styles.checkItem,
+                  { borderColor: softBorder, backgroundColor: softSurface },
+                  pressed ? styles.pressedFeedback : null,
+                ]}
                 onPress={() => setAcknowledged((value) => !value)}
                 accessibilityRole="checkbox"
                 accessibilityLabel="Confirmer la prise de connaissance du retour"
@@ -143,7 +156,7 @@ export default function ReturnReviewScreen() {
 
           {alreadyAccepted || submitted ? (
             <Card style={styles.card}>
-              <View style={[styles.successBox, { borderColor: `${tint}66`, backgroundColor: `${tint}16` }]}>
+              <View style={[styles.successBox, { borderColor: `${tint}66`, backgroundColor: `${tint}12` }]}>
                 <ThemedText type="defaultSemiBold">✅ Retour accepté</ThemedText>
                 <ThemedText style={{ color: mutedText, fontSize: 12 }}>
                   Le prêteur reçoit maintenant la confirmation dans son pass d’échange.
@@ -173,11 +186,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   content: {
-    gap: 12,
-    paddingBottom: 16,
+    gap: 14,
+    paddingBottom: 20,
   },
   card: {
-    gap: 10,
+    gap: 12,
   },
   objectPhoto: {
     width: '100%',
@@ -194,13 +207,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   infoRow: {
-    gap: 3,
+    gap: 4,
   },
   checkItem: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    minHeight: 44,
-    paddingHorizontal: 12,
+    minHeight: 46,
+    paddingHorizontal: 13,
     justifyContent: 'center',
   },
   checkLeft: {
@@ -211,7 +224,10 @@ const styles = StyleSheet.create({
   successBox: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    padding: 10,
-    gap: 8,
+    padding: 12,
+    gap: 10,
+  },
+  pressedFeedback: {
+    opacity: 0.88,
   },
 });
