@@ -76,6 +76,21 @@
 
 Critère de succès: 100% des points ci-dessus passent sur Android et iOS en build `preview`.
 
+### 8.2) Script parcours échange (manuel)
+
+- [ ] **Demande créée**: depuis [app/object/[id].tsx](app/object/[id].tsx), envoyer une demande et vérifier l'apparition en Inbox
+- [ ] **Inbox pending cohérente**: en `pending`, le CTA principal reste non actionnable avec libellé "En attente de réponse"
+- [ ] **Acceptation prêteur**: passer la demande en `accepted` et vérifier accès chat + pass d'échange
+- [ ] **Messagerie active**: en `accepted`, envoi d'un message visible dans [app/chat/[loanId].tsx](app/chat/%5BloanId%5D.tsx)
+- [ ] **Robustesse envoi chat**: couper le réseau, tenter un envoi, vérifier restauration du brouillon + notice erreur
+- [ ] **Pickup validé**: valider la remise côté prêteur/emprunteur
+- [ ] **Return validé**: valider le retour et vérifier accès à [app/proof/return-review/[loanId].tsx](app/proof/return-review/%5BloanId%5D.tsx)
+- [ ] **Clôture atomique**: couper le réseau au moment de "Valider le retour" et vérifier qu'aucune acceptation locale n'est enregistrée
+- [ ] **Refused cohérent**: en `refused`, vérifier CTA principal non actionnable avec libellé "Demande refusée"
+- [ ] **Feedback final**: après succès de clôture, vérifier redirection vers feedback et état `completed`
+
+Critère de succès: aucun écart d'état entre UI locale et backend sur les étapes return/chat en cas d'échec réseau.
+
 ## 9) Bloquants actuels à lever
 
 - [ ] Publier les pages légales via GitHub Pages (`docs/privacy.html` et `docs/terms.html`) puis renseigner les URLs stores
