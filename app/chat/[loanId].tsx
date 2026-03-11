@@ -38,10 +38,6 @@ export default function ExchangeChatScreen() {
 
   const loan = useMemo(() => INBOX_LOANS.find((item) => item.id === loanId), [INBOX_LOANS, loanId]);
   const pass = useMemo(() => (loanId ? getExchangePassByLoanId(loanId) : undefined), [loanId]);
-  const initialMessages = useMemo(
-    () => (loanId ? getExchangeMessagesByLoanId(loanId) : []),
-    [EXCHANGE_CHAT_MESSAGES, loanId]
-  );
   const loanState = useMemo(() => {
     if (!loan) {
       return undefined;
@@ -55,14 +51,19 @@ export default function ExchangeChatScreen() {
     return canOpenChat(loanState);
   }, [loanState]);
 
-  const [messages, setMessages] = useState(initialMessages);
+  const [messages, setMessages] = useState(() => (loanId ? getExchangeMessagesByLoanId(loanId) : []));
   const [draftMessage, setDraftMessage] = useState('');
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const messagesScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    setMessages(initialMessages);
-  }, [initialMessages]);
+    if (!loanId) {
+      setMessages([]);
+      return;
+    }
+
+    setMessages(getExchangeMessagesByLoanId(loanId));
+  }, [EXCHANGE_CHAT_MESSAGES, loanId]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';

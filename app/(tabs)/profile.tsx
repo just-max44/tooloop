@@ -60,7 +60,6 @@ export default function ProfileScreen() {
   const mutedText = useThemeColor({}, 'mutedText');
   const danger = useThemeColor({}, 'danger');
   const tint = useThemeColor({}, 'tint');
-  const text = useThemeColor({}, 'text');
   const softSurface = `${surface}F2`;
   const softBorder = `${border}AA`;
 

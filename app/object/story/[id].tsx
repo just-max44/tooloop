@@ -28,7 +28,7 @@ export default function ObjectStoryScreen() {
 
   const objectItem = useMemo(
     () => DISCOVER_OBJECTS.find((discoverItem) => discoverItem.id === id),
-    [id],
+    [DISCOVER_OBJECTS, id],
   );
 
   const objectStory = useMemo(() => {

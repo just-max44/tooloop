@@ -37,6 +37,6 @@ const server = http.createServer(app);
 attachRealtimeServer(server);
 
 server.listen(env.PORT, () => {
-  // eslint-disable-next-line no-console
+   
   console.log(`Backend listening on http://localhost:${env.PORT}`);
 });

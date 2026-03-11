@@ -49,7 +49,6 @@ export default function InboxScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const background = useThemeColor({}, 'background');
   const text = useThemeColor({}, 'text');
-  const mutedText = useThemeColor({}, 'mutedText');
   const border = useThemeColor({}, 'border');
   const surface = useThemeColor({}, 'surface');
   const tint = useThemeColor({}, 'tint');

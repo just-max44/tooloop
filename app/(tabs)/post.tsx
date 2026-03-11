@@ -92,7 +92,7 @@ export default function PostScreen() {
   const hasPastPublications = PAST_PUBLICATIONS.length > 0;
   const selectedPastPublication = useMemo(
     () => PAST_PUBLICATIONS.find((item) => item.id === selectedPastPublicationId) ?? null,
-    [selectedPastPublicationId]
+    [PAST_PUBLICATIONS, selectedPastPublicationId]
   );
 
   const syncLocationState = async () => {
@@ -236,6 +236,7 @@ export default function PostScreen() {
       }
     }
   }, [
+    DISCOVER_OBJECTS,
     isPrefillApplied,
     params.listingId,
   ]);

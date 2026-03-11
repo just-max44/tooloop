@@ -1,5 +1,5 @@
 import { type Request, type Response, Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import expressRateLimit from 'express-rate-limit';
 import { z } from 'zod';
 
 import {
@@ -62,7 +62,7 @@ async function issueSessionTokens(userId: string, email: string) {
 
 export const authRouter = Router();
 
-const authLimiter = rateLimit({
+const authLimiter = expressRateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
@@ -204,7 +204,7 @@ authRouter.post('/refresh', async (req: Request, res: Response) => {
       id: row.id as string,
       isMatch: await compareToken(refreshToken, row.token_hash as string),
     }))
-  ).then((items: Array<{ id: string; isMatch: boolean }>) => items.find((item) => item.isMatch));
+  ).then((items: { id: string; isMatch: boolean }[]) => items.find((item) => item.isMatch));
 
   if (!matchingToken) {
     res.status(401).json({ error: 'Refresh token revoked' });

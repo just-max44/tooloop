@@ -161,8 +161,8 @@ dataRouter.get('/snapshot', authRequired, async (req: AuthenticatedRequest, res:
     db.query('select id from feedbacks where target_user_id = $1', [authUserId]),
   ]);
 
-  const objectRows = objectsResult.rows as Array<Record<string, unknown>>;
-  const publicListingsRows = publicListingsResult.rows as Array<Record<string, unknown>>;
+  const objectRows = objectsResult.rows as Record<string, unknown>[];
+  const publicListingsRows = publicListingsResult.rows as Record<string, unknown>[];
 
   const discoverFromObjects = objectRows.map((item) => ({
     id: String(item.id),
@@ -225,7 +225,7 @@ dataRouter.get('/snapshot', authRequired, async (req: AuthenticatedRequest, res:
     .filter(Boolean)
     .slice(0, 3);
 
-  const loansRows = loansResult.rows as Array<Record<string, unknown>>;
+  const loansRows = loansResult.rows as Record<string, unknown>[];
   const loanIds = Array.from(new Set(loansRows.map((item) => String(item.id)).filter(Boolean)));
 
   const [passesResult, messagesResult, proofStateResult, loanUsersResult] = loanIds.length
@@ -268,10 +268,10 @@ dataRouter.get('/snapshot', authRequired, async (req: AuthenticatedRequest, res:
         ),
       ])
     : [
-        { rows: [] as Array<Record<string, unknown>> },
-        { rows: [] as Array<Record<string, unknown>> },
-        { rows: [] as Array<Record<string, unknown>> },
-        { rows: [] as Array<Record<string, unknown>> },
+        { rows: [] as Record<string, unknown>[] },
+        { rows: [] as Record<string, unknown>[] },
+        { rows: [] as Record<string, unknown>[] },
+        { rows: [] as Record<string, unknown>[] },
       ];
 
   const loanUsersById = new Map<string, string>();
@@ -335,7 +335,7 @@ dataRouter.get('/snapshot', authRequired, async (req: AuthenticatedRequest, res:
     ])
   );
 
-  const listings = listingsResult.rows as Array<Record<string, unknown>>;
+  const listings = listingsResult.rows as Record<string, unknown>[];
   const myItems = listings
     .filter((item) => !item.archived_at)
     .map((item) => ({
@@ -425,9 +425,9 @@ dataRouter.get('/snapshot', authRequired, async (req: AuthenticatedRequest, res:
     }
   });
 
-  const storyRows = storyRowsResult.rows as Array<Record<string, unknown>>;
-  const storyMoments = storyMomentsResult.rows as Array<Record<string, unknown>>;
-  const storyPhotos = storyPhotosResult.rows as Array<Record<string, unknown>>;
+  const storyRows = storyRowsResult.rows as Record<string, unknown>[];
+  const storyMoments = storyMomentsResult.rows as Record<string, unknown>[];
+  const storyPhotos = storyPhotosResult.rows as Record<string, unknown>[];
 
   const objectStories = storyRows.map((storyRow) => ({
     objectId: String(storyRow.object_id),

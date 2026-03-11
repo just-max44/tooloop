@@ -1,6 +1,6 @@
 type SnapshotShape = {
   profileUser: { firstName: string; lastName: string; photoUri: string };
-  discoverObjects: Array<{
+  discoverObjects: {
     id: string;
     title: string;
     description: string;
@@ -15,13 +15,13 @@ type SnapshotShape = {
     trustScore: number;
     loopsCompleted: number;
     impactKgCo2: number;
-  }>;
-  personalizedSuggestions: Array<{ id: string; objectId: string; reason: string }>;
-  inboxLoans: Array<{ id: string; objectName: string; otherUserName: string; direction: 'incoming' | 'outgoing'; state: 'pending' | 'accepted' | 'completed' | 'refused'; dueText: string }>;
+  }[];
+  personalizedSuggestions: { id: string; objectId: string; reason: string }[];
+  inboxLoans: { id: string; objectName: string; otherUserName: string; direction: 'incoming' | 'outgoing'; state: 'pending' | 'accepted' | 'completed' | 'refused'; dueText: string }[];
   profileStats: { rating: number; reviews: number; objects: number; loans: number };
   trustProfilePhotos: Record<string, string>;
-  myItems: Array<unknown>;
-  pastPublications: Array<unknown>;
+  myItems: unknown[];
+  pastPublications: unknown[];
   trustProfile: {
     level: string;
     trustScore: number;
@@ -34,15 +34,15 @@ type SnapshotShape = {
     onTimeReturnRate: number;
     responseRate: number;
   };
-  trustProofs: Array<{ id: string; label: string; value: string }>;
-  trustExchangeComments: Array<unknown>;
-  exchangePasses: Array<unknown>;
-  exchangeChatMessages: Array<unknown>;
+  trustProofs: { id: string; label: string; value: string }[];
+  trustExchangeComments: unknown[];
+  exchangePasses: unknown[];
+  exchangeChatMessages: unknown[];
   loanProofStateByLoanId: Record<string, unknown>;
-  objectStories: Array<unknown>;
-  collectiveChallenges: Array<unknown>;
+  objectStories: unknown[];
+  collectiveChallenges: unknown[];
   neighborhoodPulse: { activeNeighbors: number; loopsThisWeek: number; co2SavedKgThisWeek: number };
-  successTags: Array<{ id: string; label: string; conditionType: 'exchange_rate' | 'completed_loans' | 'on_time_return_rate' | 'story_contrib_approved' | 'active_weeks'; threshold: number; description: string; isHidden: boolean }>;
+  successTags: { id: string; label: string; conditionType: 'exchange_rate' | 'completed_loans' | 'on_time_return_rate' | 'story_contrib_approved' | 'active_weeks'; threshold: number; description: string; isHidden: boolean }[];
   userSuccesses: string[];
 };
 

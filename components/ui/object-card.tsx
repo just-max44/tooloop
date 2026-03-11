@@ -40,7 +40,6 @@ export function ObjectCard({
   onPress,
   onOwnerPress,
 }: ObjectCardProps) {
-  const mutedText = useThemeColor({}, 'mutedText');
   const border = useThemeColor({}, 'border');
   const tint = useThemeColor({}, 'tint');
   const surface = useThemeColor({}, 'surface');

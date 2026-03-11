@@ -39,7 +39,6 @@ export function Button({
   textStyle,
 }: ButtonProps) {
   const tint = useThemeColor({}, 'tint');
-  const surface = useThemeColor({}, 'surface');
   const surfaceRaised = useThemeColor({}, 'surfaceRaised');
   const text = useThemeColor({}, 'text');
   const border = useThemeColor({}, 'border');

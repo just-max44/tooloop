@@ -14,10 +14,9 @@ jest.mock('@/lib/backend/data', () => ({
   hydrateBackendData: () => mockHydrateBackendData(),
 }));
 
-let mockSubscribeCallback: (() => void) | null = null;
 jest.mock('@/stores/backend-store', () => ({
   backendStore: {
-    subscribe: jest.fn((cb: () => void) => { mockSubscribeCallback = cb; }),
+    subscribe: jest.fn((cb: () => void) => cb),
   },
   useBackendStore: jest.fn(() => ({})),
 }));

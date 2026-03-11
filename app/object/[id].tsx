@@ -64,7 +64,7 @@ export default function ObjectDetailScreen() {
 
   const objectItem = useMemo(
     () => DISCOVER_OBJECTS.find((discoverItem) => discoverItem.id === id),
-    [id],
+    [DISCOVER_OBJECTS, id],
   );
 
   const fallbackListing = useMemo(() => {
@@ -109,7 +109,7 @@ export default function ObjectDetailScreen() {
       responseTime: 'quelques heures',
       isFree: !fallbackListing.requiresDeposit,
     };
-  }, [fallbackListing, objectItem, session?.user?.id]);
+  }, [DISCOVER_OBJECTS, fallbackListing, objectItem]);
 
   const heroImageUri = displayItem?.imageUrl?.trim() ?? '';
 

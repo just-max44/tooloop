@@ -131,7 +131,7 @@ export default function TabTwoScreen() {
     }
 
     return [...DISCOVER_OBJECTS].sort((first, second) => first.distanceKm - second.distanceKm);
-  }, [locationPermission]);
+  }, [DISCOVER_OBJECTS, locationPermission]);
 
   const filteredByCategory =
     activeCategory === 'Tout'

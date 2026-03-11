@@ -9,7 +9,6 @@ type SearchBarProps = TextInputProps;
 
 export function SearchBar(props: SearchBarProps) {
   const surfaceRaised = useThemeColor({}, 'surfaceRaised');
-  const border = useThemeColor({}, 'border');
   const borderSubtle = useThemeColor({}, 'borderSubtle');
   const text = useThemeColor({}, 'text');
   const mutedText = useThemeColor({}, 'mutedText');
