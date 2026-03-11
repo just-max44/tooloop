@@ -638,7 +638,7 @@ export default function PostScreen() {
                   accessibilityLabel="Ouvrir ou fermer la section d\u00e9tails de l'annonce"
                   style={[styles.sectionHeader, { borderColor: softBorder, backgroundColor: softSurface }]}>
                   <View style={styles.sectionLabelRow}>
-                    <ThemedText type="defaultSemiBold">\u00c9tape 2 \u00b7 D\u00e9tails de l'annonce</ThemedText>
+                    <ThemedText type="defaultSemiBold">\u00c9tape 2 \u00b7 D\u00e9tails de l’annonce</ThemedText>
                   </View>
                   <MaterialIcons
                     name={expandedSections.details ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}

@@ -234,7 +234,7 @@ export default function LoginScreen() {
                     Backend non configuré
                   </ThemedText>
                   <ThemedText type="caption">
-                    Ajoute EXPO_PUBLIC_CUSTOM_API_BASE_URL dans `.env` puis redémarre l'app.
+                    Ajoute EXPO_PUBLIC_CUSTOM_API_BASE_URL dans `.env` puis redémarre l’app.
                   </ThemedText>
                 </View>
               ) : null}
@@ -366,7 +366,7 @@ export default function LoginScreen() {
                       accessibilityRole="button"
                       accessibilityLabel="Revenir \u00e0 la connexion"
                       style={styles.switchAuthModeButton}>
-                      <ThemedText type="link">J'ai d\u00e9j\u00e0 un compte</ThemedText>
+                      <ThemedText type="link">J’ai d\u00e9j\u00e0 un compte</ThemedText>
                     </Pressable>
                   </>
                 )}

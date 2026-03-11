@@ -1,2 +1,1 @@
-const React = jest.requireActual('react');
-module.exports = React;
+module.exports = require('react');

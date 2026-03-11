@@ -118,9 +118,9 @@ export default function HomeScreen() {
               <ThemedText type="label" style={{ color: colors.tint }}>
                 Lancement rapide
               </ThemedText>
-              <ThemedText type="heading">Quel objet cherches-tu aujourd'hui ?</ThemedText>
+              <ThemedText type="heading">Quel objet cherches-tu aujourd’hui ?</ThemedText>
               <ThemedText type="caption" style={styles.actionHint}>
-                Lance une recherche locale ou publie un objet en moins d'une minute.
+                Lance une recherche locale ou publie un objet en moins d’une minute.
               </ThemedText>
               <SearchBar placeholder="Ex: perceuse, escabeau, appareil \u00e0 raclette" />
               <Button

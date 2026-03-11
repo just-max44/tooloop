@@ -137,6 +137,10 @@ export default function InboxScreen() {
               const primaryAction = getPrimaryAction(loanState, feedbackSubmitted);
 
               const openMainAction = () => {
+                if (primaryAction === 'none') {
+                  return;
+                }
+
                 if (primaryAction === 'feedback') {
                   router.push({ pathname: '/feedback/[loanId]', params: { loanId: loan.id } });
                   return;
@@ -152,14 +156,15 @@ export default function InboxScreen() {
 
               const primaryActionLabel =
                 primaryAction === 'feedback'
-              const primaryActionDisabled = primaryAction === 'none';
                   ? 'Donner mon avis'
                   : primaryAction === 'chat'
-                if (primaryAction === 'none') {
-                  return;
-                }
                     ? 'Continuer dans le chat'
-                    : 'Ouvrir le pass';
+                    : primaryAction === 'proof'
+                      ? 'Ouvrir le pass'
+                      : loanState === 'refused'
+                        ? 'Demande refusée'
+                        : 'En attente de réponse';
+              const primaryActionDisabled = primaryAction === 'none';
 
               return (
                 <Card
@@ -177,11 +182,7 @@ export default function InboxScreen() {
                     <Image
                       source={{
                         uri:
-                    : primaryAction === 'proof'
-                      ? 'Ouvrir le pass'
-                      : loanState === 'refused'
-                        ? 'Demande refusée'
-                        : 'En attente de réponse';
+                          objectPreview?.imageUrl ||
                           'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=600&q=80',
                       }}
                       style={styles.objectImage}
@@ -285,6 +286,7 @@ export default function InboxScreen() {
                   <Button
                     label={primaryActionLabel}
                     variant="primary"
+                    disabled={primaryActionDisabled}
                     accessibilityLabel={`Ouvrir la fiche d'\u00e9change de ${loan.objectName}`}
                     accessibilityHint="Ouvre l'etape principale recommandee pour cet echange"
                     onPress={openMainAction}
@@ -303,7 +305,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-                    disabled={primaryActionDisabled}
   container: {
     flex: 1,
   },

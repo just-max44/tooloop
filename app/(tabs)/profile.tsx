@@ -797,7 +797,7 @@ export default function ProfileScreen() {
               onPress={() => router.push(LEGAL_ROUTES.terms as never)}
               accessibilityRole="button"
               accessibilityLabel="Ouvrir les conditions g\u00e9n\u00e9rales d'utilisation">
-              <ThemedText type="link">Conditions g\u00e9n\u00e9rales d'utilisation</ThemedText>
+              <ThemedText type="link">Conditions g\u00e9n\u00e9rales d’utilisation</ThemedText>
             </Pressable>
           </Card>
         </ScrollView>

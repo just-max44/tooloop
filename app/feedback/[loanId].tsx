@@ -197,9 +197,9 @@ export default function FeedbackScreen() {
             }>
           <Card style={styles.card}>
             <ThemedText type="label" style={{ color: tint }}>
-              Cloture de l'echange
+              Cloture de l’echange
             </ThemedText>
-            <ThemedText type="heading">Retour d'experience</ThemedText>
+            <ThemedText type="heading">Retour d’experience</ThemedText>
             <ThemedText style={{ color: mutedText }}>
               {loan.objectName} avec {loan.otherUserName}
             </ThemedText>

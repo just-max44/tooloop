@@ -361,7 +361,7 @@ export default function ObjectDetailScreen() {
               </View>
             ) : (
               <ThemedText style={{ color: mutedText }}>
-                Cette annonce t'appartient déjà.
+                Cette annonce t’appartient déjà.
               </ThemedText>
             )}
           </Card>
